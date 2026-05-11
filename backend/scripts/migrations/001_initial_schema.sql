@@ -11,9 +11,12 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- EXTENSION: pgvector (must be enabled before creating embedding columns)
+-- EXTENSIONS
+-- pgvector: embedding similarity search for RAG layer
+-- pg_trgm: trigram fuzzy text search for product name lookups
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════
