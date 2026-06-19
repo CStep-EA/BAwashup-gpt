@@ -8,6 +8,9 @@ param(
     [string]$VercelUrl
 )
 
+# Force TLS 1.2 (Windows PowerShell defaults to older TLS which Vercel rejects)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 # Remove trailing slash
 $VercelUrl = $VercelUrl.TrimEnd('/')
 
