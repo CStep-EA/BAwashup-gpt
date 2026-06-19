@@ -61,7 +61,7 @@ function SidebarLink({
         cn(
           'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
           isActive
-            ? 'bg-accent/10 text-accent'
+            ? 'bg-barn-red/20 text-white'
             : 'text-gray-300 hover:bg-white/5 hover:text-white'
         )
       }
@@ -85,15 +85,15 @@ export function Sidebar() {
   })
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col bg-navy lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col bg-charcoal lg:flex">
       {/* Branding */}
       <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-        <span className="text-2xl">🐄</span>
+        <img src="/bower-ag-logo.jpg" alt="Bower Ag" className="h-8 w-auto brightness-0 invert" />
         <div>
           <h1 className="text-base font-bold leading-tight text-white">
             CowCare Tool
           </h1>
-          <p className="text-[11px] text-blue-300">Bower Ag Expert System</p>
+          <p className="text-[11px] text-gray-400">Expert System</p>
         </div>
       </div>
 

@@ -49,12 +49,14 @@ export function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo / Branding */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-navy text-3xl text-white">
-            🐄
-          </div>
-          <h1 className="text-2xl font-bold text-navy">CowCare Tool</h1>
+          <img
+            src="/bower-ag-logo.jpg"
+            alt="Bower Ag"
+            className="mx-auto mb-4 h-14 w-auto"
+          />
+          <h1 className="text-2xl font-bold text-charcoal">CowCare Tool</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Bower Ag Expert System
+            Expert System for Dairy Cow Care
           </p>
         </div>
 
@@ -109,7 +111,7 @@ export function LoginPage() {
           <Button
             type="submit"
             disabled={submitting || !email || !password}
-            className="tap-target h-[52px] w-full rounded-lg bg-navy text-base font-semibold text-white hover:bg-navy-light disabled:opacity-50"
+            className="tap-target h-[52px] w-full rounded-lg bg-barn-red text-base font-semibold text-white hover:bg-barn-red-light disabled:opacity-50"
           >
             {submitting ? (
               <>

@@ -46,7 +46,7 @@ export function DashboardPage() {
     <div className="space-y-4 p-4">
       {/* Welcome */}
       <div>
-        <h2 className="text-xl font-bold text-navy">
+        <h2 className="text-xl font-bold text-charcoal">
           Welcome back, {profile?.full_name?.split(' ')[0] || 'there'}
         </h2>
         <p className="text-sm text-muted-foreground">
@@ -66,7 +66,7 @@ export function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-navy">—</p>
+            <p className="text-2xl font-bold text-charcoal">—</p>
             <p className="text-xs text-muted-foreground">This week</p>
           </CardContent>
         </Card>
@@ -81,7 +81,7 @@ export function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-navy">—</p>
+            <p className="text-2xl font-bold text-charcoal">—</p>
             <p className="text-xs text-muted-foreground">Generated</p>
           </CardContent>
         </Card>

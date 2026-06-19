@@ -1,18 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
-  <!-- Bower Ag CowCare Tool — Cow icon for PWA -->
-  <circle cx="50" cy="50" r="48" fill="#0D1F3C"/>
-  <!-- Simple cow face -->
-  <ellipse cx="50" cy="55" rx="22" ry="18" fill="white"/>
-  <!-- Eyes -->
-  <circle cx="42" cy="48" r="3" fill="#0D1F3C"/>
-  <circle cx="58" cy="48" r="3" fill="#0D1F3C"/>
-  <!-- Nostrils -->
-  <circle cx="45" cy="60" r="2" fill="#0D1F3C" opacity="0.3"/>
-  <circle cx="55" cy="60" r="2" fill="#0D1F3C" opacity="0.3"/>
-  <!-- Ears -->
-  <ellipse cx="30" cy="38" rx="8" ry="5" fill="white" transform="rotate(-30 30 38)"/>
-  <ellipse cx="70" cy="38" rx="8" ry="5" fill="white" transform="rotate(30 70 38)"/>
-  <!-- Horns -->
-  <path d="M35 32 Q30 20 25 22" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M65 32 Q70 20 75 22" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Bower Ag Barn Icon Mark - Brand Dark Red #9b3426 -->
+  <!-- Roof (gambrel shape) -->
+  <path d="M32 6 L12 20 L8 24 L12 24 L12 56 L52 56 L52 24 L56 24 L52 20 Z" 
+        fill="#9b3426" stroke="none"/>
+  <!-- Door cutout -->
+  <rect x="24" y="40" width="16" height="16" fill="white"/>
 </svg>

@@ -11,12 +11,12 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'cow-icon.svg'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'bower-ag-logo.jpg', 'barn-icon-red.jpg'],
       manifest: {
         name: 'Bower Ag CowCare Tool',
         short_name: 'CowCare',
         description: 'Expert system for dairy cow care consulting',
-        theme_color: '#0D1F3C',
+        theme_color: '#9b3426',
         background_color: '#ffffff',
         display: 'standalone',
         scope: '/',

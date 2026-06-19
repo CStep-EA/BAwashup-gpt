@@ -51,7 +51,7 @@ export function BottomNav() {
               cn(
                 'tap-target flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[11px] font-medium transition-colors',
                 isActive
-                  ? 'text-accent'
+                  ? 'text-barn-red'
                   : 'text-muted-foreground hover:text-foreground'
               )
             }
