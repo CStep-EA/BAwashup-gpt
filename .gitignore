@@ -53,6 +53,13 @@ htmlcov/
 *.log
 logs/
 
+# Migration reports (generated at runtime)
+backend/scripts/migration_reports/
+
+# Advisory PDF documents (large binaries — generated at runtime)
+backend/docs/advisory/
+backend/data/advisory_docs/
+
 # Temporary files
 /tmp/
 *.tmp

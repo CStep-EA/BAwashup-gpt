@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────
+# Bower Ag CowCare Tool — Railway Configuration
+# Sprint 18D: Health check timeout 300s per Deployment Guide v3.
+#
+# Railway deploys from /backend directory.
+# Uses nixpacks.toml for system packages (ffmpeg).
+# Start command: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+# ─────────────────────────────────────────────────────────
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
