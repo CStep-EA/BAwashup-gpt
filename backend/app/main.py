@@ -50,7 +50,7 @@ def _build_cors_origins() -> list[str]:
 
     origins: list[str] = []
     if raw:
-        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        origins = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
 
     if env != "production":
         # Development: also allow local dev servers
