@@ -24,7 +24,7 @@ export function CustomerLayout() {
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
           {/* Branding */}
           <div className="flex items-center gap-3">
-            <span className="text-2xl" role="img" aria-label="Cow">🐄</span>
+            <img src="/bower-ag-logo.jpg" alt="Bower Ag" className="h-8 w-auto" />
             <div>
               <h1 className="text-sm font-bold leading-tight text-navy">
                 Bower Ag

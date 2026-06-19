@@ -24,14 +24,14 @@ export function AppLayout() {
       {/* Main content area — offset by sidebar on lg+ */}
       <div className="flex min-h-screen flex-col lg:pl-64">
         {/* Mobile header — hidden on desktop (sidebar has branding) */}
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-navy px-4 lg:hidden">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-charcoal px-4 lg:hidden">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🐄</span>
+            <img src="/bower-ag-logo.jpg" alt="Bower Ag" className="h-8 w-auto brightness-0 invert" />
             <div>
               <h1 className="text-sm font-bold leading-tight text-white">
                 CowCare Tool
               </h1>
-              <p className="text-[10px] text-blue-300">Bower Ag</p>
+              <p className="text-[10px] text-gray-300">Bower Ag</p>
             </div>
           </div>
 
@@ -56,7 +56,7 @@ export function AppLayout() {
         {mobileMenuOpen && (
           <div className="absolute right-2 top-14 z-40 w-48 rounded-lg border bg-white p-2 shadow-lg lg:hidden">
             <div className="border-b px-3 py-2 text-sm">
-              <p className="font-medium text-navy">
+              <p className="font-medium text-charcoal">
                 {profile?.full_name || 'Bower Ag User'}
               </p>
               <p className="text-xs capitalize text-muted-foreground">
