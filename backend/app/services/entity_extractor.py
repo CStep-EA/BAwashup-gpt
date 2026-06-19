@@ -3,20 +3,88 @@ Bower Ag CowCare Tool — Entity Extractor
 Sprint 5: Extract product name, location code, and container size from a query.
 
 Uses a small Claude call returning JSON only.
+Falls back to regex-based extraction if LLM is unavailable.
 Location codes must be one of: EVANS, ULYSSES, JEROME, TURLOCK, TULARE or null.
 """
 
 import json
+import logging
 import os
+import re
 from typing import Optional
 
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Valid location codes (from Bower Ag's 5 branches)
 # ─────────────────────────────────────────────────────────────────────────────
 
 VALID_LOCATIONS = {"EVANS", "ULYSSES", "JEROME", "TURLOCK", "TULARE"}
+
+# Location name → code mapping for regex fallback
+_LOCATION_ALIASES: dict[str, str] = {
+    "evans": "EVANS",
+    "evans co": "EVANS",
+    "colorado": "EVANS",
+    "ulysses": "ULYSSES",
+    "ulysses ks": "ULYSSES",
+    "kansas": "ULYSSES",
+    "jerome": "JEROME",
+    "jerome id": "JEROME",
+    "idaho": "JEROME",
+    "turlock": "TURLOCK",
+    "turlock ca": "TURLOCK",
+    "tulare": "TULARE",
+    "tulare ca": "TULARE",
+    "california": "TURLOCK",  # Default CA to Turlock
+}
+
+# Known product names for regex fallback
+_KNOWN_PRODUCTS = [
+    "Curiass", "Pavise", "Shield", "Aegis", "ABS Express",
+    "CD114", "Acid Foam", "Acid Blend", "Acidishine",
+    "HydroSurge", "Chlor-Clean", "Power Wash",
+]
+
+_CONTAINER_PATTERNS = re.compile(
+    r"\b(\d+[\.\d]*)\s*-?\s*(gallon|gal|drum|tote|pail|jug)\b",
+    re.IGNORECASE,
+)
+
+
+def _regex_extract_entities(query: str) -> dict:
+    """
+    Regex-based entity extraction fallback when LLM is unavailable.
+    Extracts product_name, location_code, and container_size using patterns.
+    """
+    result = {"product_name": None, "location_code": None, "container_size": None}
+
+    query_lower = query.lower()
+
+    # Extract location
+    for alias, code in _LOCATION_ALIASES.items():
+        if alias in query_lower:
+            result["location_code"] = code
+            break
+
+    # Extract product name (case-insensitive match of known products)
+    for product in _KNOWN_PRODUCTS:
+        if product.lower() in query_lower:
+            result["product_name"] = product
+            break
+
+    # Extract container size
+    match = _CONTAINER_PATTERNS.search(query)
+    if match:
+        size = match.group(1)
+        unit = match.group(2).capitalize()
+        if unit == "Gal":
+            unit = "Gallon"
+        result["container_size"] = f"{size}-{unit}"
+
+    return result
 
 EXTRACTION_PROMPT = """\
 You are an entity extractor for a dairy industry product system (Bower Ag).
@@ -120,7 +188,11 @@ def extract_entities(query: str) -> dict:
 
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         print(f"[ENTITY_EXTRACTOR] JSON parse error: {str(e)[:200]}")
-        return default
+        return _regex_extract_entities(query)
     except Exception as e:
         print(f"[ENTITY_EXTRACTOR] Error extracting entities: {str(e)[:200]}")
-        return default
+        # Fallback to regex-based extraction
+        fallback = _regex_extract_entities(query)
+        if any(v is not None for v in fallback.values()):
+            logger.info(f"[ENTITY_EXTRACTOR] LLM failed, regex fallback → {fallback}")
+        return fallback

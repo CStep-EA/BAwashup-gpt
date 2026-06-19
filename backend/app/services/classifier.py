@@ -3,14 +3,19 @@ Bower Ag CowCare Tool — Domain Classifier
 Sprint 5: Classify a dairy query into one of the known domains.
 
 Uses a small Claude call (max_tokens=50) with LRU cache for identical queries.
+Falls back to keyword-based classification if LLM is unavailable.
 Returns 'UNKNOWN' if the response is not a valid domain.
 """
 
+import logging
 import os
+import re
 from functools import lru_cache
 from typing import Optional
 
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Valid domains (must match DOMAIN_ADDENDUM keys + PRICING)
@@ -50,6 +55,63 @@ def _get_client() -> anthropic.Anthropic:
             raise RuntimeError("ANTHROPIC_API_KEY not set in environment")
         _client = anthropic.Anthropic(api_key=api_key)
     return _client
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Keyword-based fallback classifier (no LLM needed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Pattern tuples: (compiled_regex, domain)
+# Order matters — PRICING checked first per Document B priority rules.
+_KEYWORD_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # PRICING — cost/price/availability keywords
+    (re.compile(
+        r"\b(price|pricing|cost|how much|per gallon|per drum|per pail|"
+        r"per unit|what does .* cost|expense|quote|rate card|"
+        r"do you carry|available at|sell at|retail)\b",
+        re.IGNORECASE,
+    ), "PRICING"),
+    # TEAT_DIP — teat dip products and related
+    (re.compile(
+        r"\b(teat dips?|pre[- ]?dips?|post[- ]?dips?|curiass|pavise|shield|"
+        r"aegis|barrier dips?|germicide|emollient|iodine dip|"
+        r"chlorhexidine|clo2 dip|teat spray)\b",
+        re.IGNORECASE,
+    ), "TEAT_DIP"),
+    # CHEMICAL_CIP — cleaning chemicals and CIP
+    (re.compile(
+        r"\b(cip|clean.in.place|acid wash|alkaline|detergent|sanitizer|"
+        r"chlorinated|pipeline clean|wash cycle|cd114|acid foam|"
+        r"bulk tank clean|milk stone|rinse)\b",
+        re.IGNORECASE,
+    ), "CHEMICAL_CIP"),
+    # TROUBLESHOOTING — dairy system issues
+    (re.compile(
+        r"\b(bacteria|spc|coliform|water quality|hardness|flow rate|"
+        r"pressure|liner|pulsation|vacuum|plug|clog|high count|"
+        r"plate count|bulk tank|lab results|scc)\b",
+        re.IGNORECASE,
+    ), "TROUBLESHOOTING"),
+    # COW_HEALTH — animal health topics
+    (re.compile(
+        r"\b(mastitis|teat end|hyperkeratosis|dry cow|fresh cow|"
+        r"milking procedure|udder health|calf|colostrum|"
+        r"somatic cell|teat condition|teat score|clinical)\b",
+        re.IGNORECASE,
+    ), "COW_HEALTH"),
+]
+
+
+def _keyword_classify(query: str) -> Optional[str]:
+    """
+    Fast keyword-based domain classification.
+    Returns domain string if a clear match is found, None otherwise.
+    Used as fallback when LLM classifier is unavailable.
+    """
+    for pattern, domain in _KEYWORD_PATTERNS:
+        if pattern.search(query):
+            return domain
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,4 +163,9 @@ def classify_domain(query: str) -> str:
 
     except Exception as e:
         print(f"[CLASSIFIER] Error classifying query: {str(e)[:200]}")
+        # Fallback to keyword-based classification when LLM unavailable
+        fallback = _keyword_classify(query)
+        if fallback:
+            logger.info(f"[CLASSIFIER] LLM failed, keyword fallback → {fallback}")
+            return fallback
         return "UNKNOWN"

@@ -1,113 +1,84 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # Bower Ag CowCare Tool — Full Test Suite Runner
-# Sprint 15: Run ALL tests — backend, frontend, and optionally E2E + regression.
+# Sprint 12: Runs backend + frontend tests and reports combined results.
 #
 # Usage:
-#   bash scripts/run_all_tests.sh                  # backend + frontend unit
-#   bash scripts/run_all_tests.sh --regression     # include regression
-#   bash scripts/run_all_tests.sh --e2e            # include Playwright E2E
-#   bash scripts/run_all_tests.sh --all            # everything
+#   ./scripts/run_all_tests.sh
 # ─────────────────────────────────────────────────────────────────────────────
 
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Parse flags
-RUN_REGRESSION=false
-RUN_E2E=false
+PASS=0
+FAIL=0
 
-for arg in "$@"; do
-    case "$arg" in
-        --regression) RUN_REGRESSION=true ;;
-        --e2e) RUN_E2E=true ;;
-        --all) RUN_REGRESSION=true; RUN_E2E=true ;;
-        *) ;;
-    esac
-done
-
-TOTAL_EXIT=0
-
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║  Bower Ag CowCare Tool — Full Test Suite            ║"
-echo "╚══════════════════════════════════════════════════════╝"
-echo ""
-echo "Flags: regression=$RUN_REGRESSION  e2e=$RUN_E2E"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║        BOWER AG COWCARE TOOL — FULL TEST SUITE              ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-# ────────────────────────────────────────────────────────────────────────────
-# 1. Backend Unit + Integration Tests
-# ────────────────────────────────────────────────────────────────────────────
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 1/4  Backend Tests (excluding regression)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# ── Backend tests ──
+echo "━━━ Backend Tests (pytest) ━━━"
+cd "$ROOT_DIR/backend"
 
-cd "$PROJECT_ROOT/backend"
-
+# Load .env if present
 if [ -f .env ]; then
-    set -a; source .env; set +a
+    set -a
+    source .env 2>/dev/null
+    set +a
 fi
 
-python -m pytest app/tests/ -m "not regression" --tb=short -q || TOTAL_EXIT=1
+if python -m pytest app/tests/ -m "not regression" --tb=short -q 2>&1; then
+    echo "✅ Backend tests passed"
+    PASS=$((PASS + 1))
+else
+    echo "❌ Backend tests failed"
+    FAIL=$((FAIL + 1))
+fi
 
 echo ""
 
-# ────────────────────────────────────────────────────────────────────────────
-# 2. Frontend Unit Tests (Vitest)
-# ────────────────────────────────────────────────────────────────────────────
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🎨 2/4  Frontend Unit Tests (Vitest)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# ── Frontend unit tests ──
+echo "━━━ Frontend Tests (vitest) ━━━"
+cd "$ROOT_DIR/frontend"
 
-cd "$PROJECT_ROOT/frontend"
-npx vitest run --reporter=default || TOTAL_EXIT=1
+if npx vitest run --reporter=verbose 2>&1; then
+    echo "✅ Frontend tests passed"
+    PASS=$((PASS + 1))
+else
+    echo "❌ Frontend tests failed"
+    FAIL=$((FAIL + 1))
+fi
 
 echo ""
 
-# ────────────────────────────────────────────────────────────────────────────
-# 3. Governance Regression (optional — costs real API calls)
-# ────────────────────────────────────────────────────────────────────────────
-if [ "$RUN_REGRESSION" = true ]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔬 3/4  Governance Regression (Claude API)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    cd "$PROJECT_ROOT/backend"
-    python -m pytest app/tests/test_governance_regression.py \
-        -m "regression" --tb=long -v || TOTAL_EXIT=1
-    echo ""
+# ── Frontend TypeScript check ──
+echo "━━━ TypeScript Check ━━━"
+if npx tsc --noEmit 2>&1; then
+    echo "✅ TypeScript: no errors"
+    PASS=$((PASS + 1))
 else
-    echo "⏭️  3/4  Governance Regression — SKIPPED (use --regression)"
-    echo ""
+    echo "❌ TypeScript check failed"
+    FAIL=$((FAIL + 1))
 fi
 
-# ────────────────────────────────────────────────────────────────────────────
-# 4. Playwright E2E (optional — requires dev servers running)
-# ────────────────────────────────────────────────────────────────────────────
-if [ "$RUN_E2E" = true ]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🌐 4/4  Playwright E2E Tests"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
-    cd "$PROJECT_ROOT/frontend"
-    npx playwright test --reporter=list || TOTAL_EXIT=1
+# ── Summary ──
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+TOTAL=$((PASS + FAIL))
+echo "  Results: ${PASS}/${TOTAL} test suites passed"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ $FAIL -gt 0 ]; then
     echo ""
+    echo "❌ FULL SUITE FAILED — $FAIL suite(s) did not pass"
+    exit 1
 else
-    echo "⏭️  4/4  Playwright E2E — SKIPPED (use --e2e)"
     echo ""
+    echo "✅ ALL TEST SUITES PASSED"
+    exit 0
 fi
-
-# ────────────────────────────────────────────────────────────────────────────
-# Summary
-# ────────────────────────────────────────────────────────────────────────────
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [ $TOTAL_EXIT -eq 0 ]; then
-    echo "✅ All test suites PASSED!"
-else
-    echo "❌ Some test suites FAILED — check output above."
-fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-exit $TOTAL_EXIT
