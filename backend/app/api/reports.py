@@ -245,12 +245,13 @@ async def generate_report(
             for pt in pricing_table
         )
 
+    pricing_block = f"PRICING:\n{pricing_str}\n\n" if pricing_str else ""
     context_text = (
         f"CUSTOMER: {body.customer_name} | OPERATION: {body.operation_name}\n"
         f"LOCATION: {location_name}\n"
         f"REP: {body.rep_name}, {body.rep_title}\n\n"
         f"PRODUCTS:\n{product_list_str}\n\n"
-        f"{'PRICING:\\n' + pricing_str + chr(10) + chr(10) if pricing_str else ''}"
+        f"{pricing_block}"
         f"FINDINGS FROM VISIT:\n{body.findings}\n\n"
         f"RECOMMENDATIONS:\n{body.recommendations}"
     )

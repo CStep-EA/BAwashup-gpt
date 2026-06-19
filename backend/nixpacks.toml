@@ -1,13 +1,18 @@
 # ─────────────────────────────────────────────────────────
 # Bower Ag CowCare Tool — Railway Nixpacks Configuration
 # Sprint 16: Install ffmpeg for video frame extraction.
-# Sprint 18D fix: Removed explicit [phases.install] so
-# nixpacks auto-detects Python from requirements.txt and
-# creates a venv with pip available.
+# Sprint 18D fix: Explicitly include python311 + pip in
+# nixPkgs so the install phase can create a venv.
+# Note: nixpacks' auto-detection of Python is suppressed
+# when [phases.setup].nixPkgs is explicitly set, so we
+# must include Python ourselves.
 # ─────────────────────────────────────────────────────────
 
 [phases.setup]
-nixPkgs = ['ffmpeg']
+nixPkgs = ['python311', 'python311Packages.pip', 'ffmpeg']
+
+[phases.install]
+cmds = ['python -m venv --copies /opt/venv && . /opt/venv/bin/activate && pip install -r requirements.txt']
 
 [start]
-cmd = 'uvicorn app.main:app --host 0.0.0.0 --port $PORT'
+cmd = '. /opt/venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port $PORT'
