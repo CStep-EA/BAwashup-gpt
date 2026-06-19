@@ -128,16 +128,19 @@ async def analyze_image(
     if len(file_bytes) == 0:
         raise HTTPException(400, "Empty file uploaded.")
 
-    # ── Step A: Upload to R2 ──
+    # ── Step A: Upload to R2 (optional — analysis works without storage) ──
     timestamp = int(time.time())
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", file.filename or "image")
     r2_path = f"media/{user.id}/{date.today().isoformat()}/{timestamp}_{safe_name}"
+    image_url = ""
 
     try:
         storage = get_storage_service()
-        await storage.upload_bytes(file_bytes, r2_path, content_type)
-    except StorageError as e:
-        raise HTTPException(500, f"Failed to upload image: {str(e)[:200]}")
+        if storage._configured:
+            await storage.upload_bytes(file_bytes, r2_path, content_type)
+            image_url = await storage.get_presigned_url(r2_path)
+    except StorageError:
+        pass  # Non-fatal — analysis still works without storage
 
     # ── Step B: Convert to base64 for Claude Vision ──
     media_type = content_type
@@ -246,11 +249,14 @@ async def analyze_image(
         if scores:
             teat_scores = [int(s) for s in scores[:20]]  # Max 20 teats
 
-    # ── Generate presigned URL ──
-    try:
-        image_url = await storage.get_presigned_url(r2_path, expiry_seconds=3600)
-    except StorageError:
-        image_url = ""
+    # ── Generate presigned URL (if R2 is configured) ──
+    if not image_url:
+        try:
+            storage = get_storage_service()
+            if storage._configured:
+                image_url = await storage.get_presigned_url(r2_path, expiry_seconds=3600)
+        except (StorageError, Exception):
+            image_url = ""
 
     # ── Step F: Audit log ──
     duration_ms = int((time.time() - start) * 1000)
@@ -310,6 +316,12 @@ async def analyze_video(
 
     try:
         storage = get_storage_service()
+        if not storage._configured:
+            raise HTTPException(
+                503,
+                "Video upload is temporarily unavailable. Storage not configured. "
+                "Please contact your administrator."
+            )
         await storage.upload_bytes(file_bytes, r2_path, content_type)
     except StorageError as e:
         raise HTTPException(500, f"Failed to upload video: {str(e)[:200]}")
