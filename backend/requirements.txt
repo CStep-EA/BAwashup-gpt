@@ -26,9 +26,17 @@ boto3>=1.34.0
 
 # Async job queue
 arq>=0.25.0
+redis>=5.0.0
+
+# Media pipeline
+python-multipart>=0.0.9
+Pillow>=10.4.0
 
 # Token counting
 tiktoken>=0.7.0
+
+# Monitoring
+sentry-sdk[fastapi]>=2.0.0
 
 # Testing
 pytest>=8.0.0

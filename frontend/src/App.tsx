@@ -1,69 +1,126 @@
 /**
- * Bower Ag CowCare Tool — App Root
- * Mobile-first expert system for dairy cow care consulting.
- * Cow comfort is #1.
+ * Bower Ag CowCare Tool — App Router
+ * Sprint 14: Added media job status route.
+ *
+ * Route structure:
+ *   /login              — Public (LoginPage)
+ *   /offline            — Public (OfflinePage)
+ *
+ *   [AuthGuard]         — All routes below require authentication
+ *
+ *     [CustomerLayout]  — Customer-only routes (no Sidebar/BottomNav)
+ *       /my-reports               — CustomerReportsPage
+ *       /my-reports/:reportId     — CustomerReportViewPage
+ *
+ *     [AppLayout]       — Staff routes (Sidebar + BottomNav)
+ *
+ *       [CustomerGuard] — Redirects customers to /my-reports
+ *         /             — DashboardPage
+ *         /chat         — ChatPage
+ *         /products     — ProductsPage
+ *         /reports      — ReportsPage
+ *         /reports/:reportId/preview — ReportPreviewPage
+ *         /media/jobs/:jobId — MediaJobStatusPage
+ *         /settings     — SettingsPage
+ *
+ *       [RoleGuard: org_admin, admin]
+ *         /admin        — AdminDashboard
+ *         /admin/users  — AdminUsers
+ *         /admin/config — AdminConfig
+ *         /admin/bugs   — AdminBugs
+ *         /admin/versions — AdminVersions
+ *         /admin/audit  — AuditLogPage (org_admin only in nav)
+ *
+ *   *                   — NotFoundPage (catch-all)
  */
+
+import { Routes, Route } from 'react-router-dom'
+
+// Guards
+import { AuthGuard } from '@/components/guards/AuthGuard'
+import { RoleGuard } from '@/components/guards/RoleGuard'
+import { CustomerGuard } from '@/components/guards/CustomerGuard'
+
+// Layouts
+import { AppLayout } from '@/components/layout/AppLayout'
+import { CustomerLayout } from '@/layouts/CustomerLayout'
+
+// Public pages
+import { LoginPage } from '@/pages/LoginPage'
+import { OfflinePage } from '@/pages/OfflinePage'
+import { NotFoundPage } from '@/pages/NotFoundPage'
+
+// App pages (staff)
+import { DashboardPage } from '@/pages/DashboardPage'
+import { ChatPage } from '@/pages/ChatPage'
+import { ProductLookupPage } from '@/pages/ProductLookupPage'
+import { ReportsPage } from '@/pages/ReportsPage'
+import { ReportPreviewPage } from '@/pages/ReportPreviewPage'
+import { SettingsPage } from '@/pages/SettingsPage'
+
+// Customer pages
+import { CustomerReportsPage } from '@/pages/customer/CustomerReportsPage'
+import { CustomerReportViewPage } from '@/pages/customer/CustomerReportViewPage'
+
+// Media pages (Sprint 14)
+import { MediaJobStatusPage } from '@/pages/media/MediaJobStatusPage'
+
+// Admin pages
+import { AdminDashboard } from '@/pages/admin/AdminDashboard'
+import { AdminUsers } from '@/pages/admin/AdminUsers'
+import { AdminConfig } from '@/pages/admin/AdminConfig'
+import { AdminBugs } from '@/pages/admin/AdminBugs'
+import { AdminVersions } from '@/pages/admin/AdminVersions'
+import { AuditLogPage } from '@/pages/admin/AuditLogPage'
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-[var(--color-navy)] text-white px-4 py-3 flex items-center gap-3">
-        <div className="text-2xl">🐄</div>
-        <div>
-          <h1 className="text-lg font-bold leading-tight">CowCare Tool</h1>
-          <p className="text-xs text-blue-200">Bower Ag Expert System</p>
-        </div>
-      </header>
+    <Routes>
+      {/* Public routes */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/offline" element={<OfflinePage />} />
 
-      {/* Main Content — Sprint 0 placeholder */}
-      <main className="p-4 max-w-lg mx-auto">
-        <div className="bg-white rounded-xl shadow-sm border p-6 mt-4">
-          <div className="text-center">
-            <div className="text-5xl mb-4">🐄</div>
-            <h2 className="text-xl font-bold text-[var(--color-navy)] mb-2">
-              Bower Ag CowCare Tool
-            </h2>
-            <p className="text-gray-600 mb-4">
-              Expert system for dairy cow care consulting.
-              <br />
-              <span className="font-medium text-[var(--color-accent)]">
-                Cow comfort is always #1.
-              </span>
-            </p>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-              ✅ Frontend running — Sprint 0 complete.
-              <br />
-              Chat, products, and reports coming in future sprints.
-            </div>
-          </div>
-        </div>
+      {/* Authenticated routes */}
+      <Route element={<AuthGuard />}>
 
-        {/* System Status */}
-        <div className="mt-4 bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="font-semibold text-sm text-gray-700 mb-2">System Status</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Frontend</span>
-              <span className="text-green-600 font-medium">● Running</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Backend API</span>
-              <span className="text-yellow-600 font-medium">○ Connect .env</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Database</span>
-              <span className="text-yellow-600 font-medium">○ Connect .env</span>
-            </div>
-          </div>
-        </div>
+        {/* ── Customer portal — simplified layout, no nav ────────── */}
+        <Route element={<CustomerLayout />}>
+          <Route path="my-reports" element={<CustomerReportsPage />} />
+          <Route path="my-reports/:reportId" element={<CustomerReportViewPage />} />
+        </Route>
 
-        {/* Version footer */}
-        <p className="text-center text-xs text-gray-400 mt-6">
-          v0.0.1 · Sprint 0 · Project Foundation
-        </p>
-      </main>
-    </div>
+        {/* ── Staff routes — full layout with Sidebar + BottomNav ── */}
+        <Route element={<AppLayout />}>
+          {/* Non-customer routes — customers get redirected to /my-reports */}
+          <Route element={<CustomerGuard />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="chat" element={<ChatPage />} />
+            <Route path="products" element={<ProductLookupPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/:reportId/preview" element={<ReportPreviewPage />} />
+            <Route path="media/jobs/:jobId" element={<MediaJobStatusPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+
+          {/* Admin routes — org_admin and admin only, shows 403 for others */}
+          <Route
+            element={
+              <RoleGuard allowedRoles={['org_admin', 'admin']} />
+            }
+          >
+            <Route path="admin" element={<AdminDashboard />} />
+            <Route path="admin/users" element={<AdminUsers />} />
+            <Route path="admin/config" element={<AdminConfig />} />
+            <Route path="admin/bugs" element={<AdminBugs />} />
+            <Route path="admin/versions" element={<AdminVersions />} />
+            <Route path="admin/audit" element={<AuditLogPage />} />
+          </Route>
+        </Route>
+      </Route>
+
+      {/* 404 catch-all */}
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   )
 }
 

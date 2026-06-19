@@ -1,0 +1,13 @@
+# ─────────────────────────────────────────────────────────
+# Bower Ag CowCare Tool — Railway Nixpacks Configuration
+# Sprint 16: Install ffmpeg for video frame extraction.
+# ─────────────────────────────────────────────────────────
+
+[phases.setup]
+nixPkgs = ['ffmpeg']
+
+[phases.install]
+cmds = ['pip install -r requirements.txt']
+
+[start]
+cmd = 'uvicorn app.main:app --host 0.0.0.0 --port $PORT'
