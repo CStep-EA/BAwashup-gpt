@@ -1,5 +1,5 @@
 # Bower Ag CowCare Tool — Deployment & Beta Launch Guide
-## Sprint 16: v0.1.0-beta
+## Sprint 16-19: v0.1.0-beta
 
 ---
 
@@ -57,7 +57,7 @@
 
 **Verify**:
 ```bash
-curl https://YOUR-APP.railway.app/health
+curl https://bawashup-gpt-production.up.railway.app/health
 # Expected: {"status":"ok","service":"bowerag-cowcare-api","version":"0.1.0-beta","environment":"production"}
 ```
 
@@ -78,7 +78,7 @@ curl https://YOUR-APP.railway.app/health
 |----------|-------|
 | `VITE_SUPABASE_URL` | Same as backend `SUPABASE_URL` |
 | `VITE_SUPABASE_ANON_KEY` | Same as backend `SUPABASE_ANON_KEY` |
-| `VITE_API_URL` | `https://YOUR-APP.railway.app` |
+| `VITE_API_URL` | `https://bawashup-gpt-production.up.railway.app` |
 | `VITE_APP_VERSION` | `0.1.0-beta` |
 | `VITE_SENTRY_DSN` | (set after Sentry setup) |
 
@@ -141,8 +141,8 @@ Run after deployment:
 
 ```bash
 # Set your actual URLs
-export API_URL=https://YOUR-APP.railway.app
-export UI_URL=https://bowerag-cowcare.vercel.app
+export API_URL=https://bawashup-gpt-production.up.railway.app
+export UI_URL=https://YOUR-PROJECT.vercel.app
 export ADMIN_JWT=eyJ...  # Sign in as org_admin, get token from browser DevTools
 
 bash scripts/production_smoke_test.sh
@@ -245,3 +245,4 @@ Expected: All 8 tests pass.
 | Version | Date | Notes |
 |---------|------|-------|
 | v0.1.0-beta | 2026-05-15 | Initial beta release |
+| v0.1.0-beta | 2026-06-19 | Railway deployed, Vercel ready (Sprint 18D/19D) |
