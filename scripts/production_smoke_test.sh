@@ -12,11 +12,11 @@
 #   ADMIN_JWT — org_admin Bearer token for authenticated tests
 # ─────────────────────────────────────────────────────────────────────────────
 
-set -euo pipefail
+set -uo pipefail
 
 # Defaults — override with env vars
-API="${API_URL:-https://YOUR-APP.railway.app}"
-UI="${UI_URL:-https://bowerag-cowcare.vercel.app}"
+API="${API_URL:-https://bawashup-gpt-production.up.railway.app}"
+UI="${UI_URL:-https://bawashup-gpt.vercel.app}"
 ADMIN_JWT="${ADMIN_JWT:-}"
 
 PASS=0

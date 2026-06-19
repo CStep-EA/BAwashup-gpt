@@ -7,9 +7,12 @@
 
 param(
     [string]$ApiUrl = "https://bawashup-gpt-production.up.railway.app",
-    [string]$UiUrl = "https://bowerag-cowcare.vercel.app",
+    [string]$UiUrl = "https://bawashup-gpt.vercel.app",
     [string]$AdminJwt = ""
 )
+
+# Force TLS 1.2 (Windows PowerShell defaults to older TLS)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $ErrorActionPreference = "Continue"
 $Pass = 0
