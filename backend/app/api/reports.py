@@ -9,6 +9,7 @@ Pipeline: Validate -> Governance check -> Create record -> Claude -> DOCX -> R2 
 ⚠️ Never expose R2 paths — always return presigned URLs.
 """
 
+import logging
 import re
 import time
 from datetime import date
@@ -17,6 +18,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from app.core.auth import (
     CurrentUser,
@@ -316,38 +319,42 @@ async def generate_report(
             pass
         raise HTTPException(500, f"DOCX generation failed: {str(e)[:200]}")
 
-    # ── STEP F: Upload to R2 ──
+    # ── STEP F: Upload to R2 (graceful degradation if not configured) ──
     op_slug = _slugify(body.operation_name)
     r2_path = f"reports/{user.id}/{report_id}/{op_slug}_{report_date}.docx"
+    download_url = ""
+    r2_uploaded = False
 
     try:
         storage = get_storage_service()
-        await storage.upload_bytes(
-            docx_bytes,
-            r2_path,
-            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
+        if storage._configured:
+            await storage.upload_bytes(
+                docx_bytes,
+                r2_path,
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            r2_uploaded = True
+        else:
+            logger.warning("[Reports] R2 not configured — skipping DOCX upload. Report text still available.")
     except StorageError as e:
-        try:
-            client.table("reports").update({"status": "failed"}).eq("id", report_id).execute()
-        except Exception:
-            pass
-        raise HTTPException(500, f"R2 upload failed: {str(e)[:200]}")
+        logger.error(f"[Reports] R2 upload failed (non-fatal): {e}")
+        # Don't crash — report text is still generated
 
-    # Update record with R2 path and status
+    # Update record with status (and R2 path if uploaded)
     try:
-        client.table("reports").update({
-            "docx_r2_path": r2_path,
-            "status": "complete",
-        }).eq("id", report_id).execute()
+        update_data = {"status": "complete"}
+        if r2_uploaded:
+            update_data["docx_r2_path"] = r2_path
+        client.table("reports").update(update_data).eq("id", report_id).execute()
     except Exception:
         pass
 
-    # ── STEP G: Generate presigned URL ──
-    try:
-        download_url = await storage.get_presigned_url(r2_path, expiry_seconds=86400)
-    except StorageError:
-        download_url = ""
+    # ── STEP G: Generate presigned URL (if R2 available) ──
+    if r2_uploaded:
+        try:
+            download_url = await storage.get_presigned_url(r2_path, expiry_seconds=86400)
+        except StorageError:
+            download_url = ""
 
     duration_ms = int((time.time() - start) * 1000)
 
