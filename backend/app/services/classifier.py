@@ -137,7 +137,7 @@ def classify_domain(query: str) -> str:
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
             max_tokens=50,
             messages=[{
                 "role": "user",
