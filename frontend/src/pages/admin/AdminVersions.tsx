@@ -31,7 +31,6 @@ import {
   Check,
   RefreshCw,
   ExternalLink,
-  Github,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import type { CreateVersionRequest } from '@/lib/api'
@@ -86,7 +85,7 @@ function SourceBadge({ source }: { source: string | null }) {
   if (source === 'github_release') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
-        <Github className="h-2.5 w-2.5" />
+        <GitBranch className="h-2.5 w-2.5" />
         Release
       </span>
     )
