@@ -20,7 +20,7 @@ from app.core.prompts import BASE_SYSTEM_PROMPT, DOMAIN_ADDENDUM, REPORT_WRITING
 # Configuration (from Doc B §7.3)
 # ─────────────────────────────────────────────────────────────────────────────
 
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 CHAT_MAX_TOKENS = 2048
 REPORT_MAX_TOKENS = 4096
 

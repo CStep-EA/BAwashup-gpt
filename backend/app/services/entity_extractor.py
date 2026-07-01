@@ -151,7 +151,7 @@ def extract_entities(query: str) -> dict:
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
             max_tokens=200,
             messages=[{
                 "role": "user",
