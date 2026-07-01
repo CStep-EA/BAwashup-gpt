@@ -176,8 +176,28 @@ def call_claude(
         messages=augmented_messages,
     )
 
+    # Extract text from response, filtering out ThinkingBlock objects
+    # Newer Claude models (claude-sonnet-4, claude-sonnet-5) may return
+    # ThinkingBlock objects alongside TextBlock objects in response.content
+    reply_text = ""
+    for block in response.content:
+        if hasattr(block, "text") and block.type == "text":
+            reply_text += block.text
+    
+    # Fallback: if no text blocks found, try legacy access
+    if not reply_text:
+        for block in response.content:
+            if hasattr(block, "text"):
+                reply_text += block.text
+    
+    if not reply_text:
+        raise RuntimeError(
+            f"Claude returned no text content. "
+            f"Content types: {[getattr(b, 'type', 'unknown') for b in response.content]}"
+        )
+
     return {
-        "reply": response.content[0].text,
+        "reply": reply_text,
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
         "model": response.model,

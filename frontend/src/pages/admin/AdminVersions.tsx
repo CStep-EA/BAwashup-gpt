@@ -1,12 +1,16 @@
 /**
  * AdminVersions — Version history / changelog (Admin only)
- * Sprint 12: Accordion entries, create release (org_admin only), CSV export.
+ * Sprint 21: GitHub auto-sync, PR notes display, enriched changelog.
  *
- * Fetches from /admin/versions. ADMIN_ROLES guard on backend.
- * POST /admin/versions requires org_admin.
+ * Features:
+ *   - Auto-fetches version history on mount
+ *   - "Sync GitHub" button pulls latest PRs and releases
+ *   - Shows PR links, source badges, and enriched notes
+ *   - Create release (org_admin only)
+ *   - CSV export
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   GitBranch,
+  GitPullRequest,
   Plus,
   Download,
   AlertTriangle,
@@ -24,10 +29,35 @@ import {
   X,
   AlertCircle,
   Check,
+  RefreshCw,
+  ExternalLink,
+  Github,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import type { VersionLogItem, CreateVersionRequest } from '@/lib/api'
-import { fetchAdminVersions, createVersion, getVersionsExportUrl } from '@/lib/api'
+import type { CreateVersionRequest } from '@/lib/api'
+import {
+  fetchAdminVersions,
+  createVersion,
+  getVersionsExportUrl,
+  syncGitHubVersions,
+  fetchChangelog,
+} from '@/lib/api'
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface ChangelogEntry {
+  id: string
+  version_tag: string
+  release_date: string | null
+  release_notes: string | null
+  breaking_changes: string | null
+  bugs_resolved: string[] | null
+  pr_number: number | null
+  pr_title: string | null
+  pr_url: string | null
+  source: string | null
+  created_at: string
+}
 
 // ─── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -42,9 +72,39 @@ function VersionsSkeleton() {
   )
 }
 
+// ─── Source Badge ──────────────────────────────────────────────────────────────
+
+function SourceBadge({ source }: { source: string | null }) {
+  if (!source || source === 'manual') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+        <Tag className="h-2.5 w-2.5" />
+        Manual
+      </span>
+    )
+  }
+  if (source === 'github_release') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
+        <Github className="h-2.5 w-2.5" />
+        Release
+      </span>
+    )
+  }
+  if (source === 'github_pr') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+        <GitPullRequest className="h-2.5 w-2.5" />
+        PR
+      </span>
+    )
+  }
+  return null
+}
+
 // ─── Accordion Item ────────────────────────────────────────────────────────────
 
-function VersionAccordionItem({ version }: { version: VersionLogItem }) {
+function VersionAccordionItem({ version }: { version: ChangelogEntry }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -56,15 +116,31 @@ function VersionAccordionItem({ version }: { version: VersionLogItem }) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Tag className="h-4 w-4 text-accent" />
+              {version.source === 'github_pr' ? (
+                <GitPullRequest className="h-4 w-4 text-blue-600" />
+              ) : version.source === 'github_release' ? (
+                <Tag className="h-4 w-4 text-green-600" />
+              ) : (
+                <Tag className="h-4 w-4 text-accent" />
+              )}
               <div>
                 <CardTitle className="text-sm font-bold text-navy">
                   {version.version_tag}
+                  {version.pr_number && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      #{version.pr_number}
+                    </span>
+                  )}
                 </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  <Clock className="mr-1 inline h-3 w-3" />
-                  {new Date(version.created_at).toLocaleDateString()}
-                </p>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    <Clock className="mr-1 inline h-3 w-3" />
+                    {version.release_date
+                      ? new Date(version.release_date).toLocaleDateString()
+                      : new Date(version.created_at).toLocaleDateString()}
+                  </p>
+                  <SourceBadge source={version.source} />
+                </div>
               </div>
             </div>
             {expanded ? (
@@ -79,11 +155,21 @@ function VersionAccordionItem({ version }: { version: VersionLogItem }) {
       {expanded && (
         <CardContent className="pt-0">
           <div className="space-y-3 border-t pt-3">
+            {/* PR Title */}
+            {version.pr_title && version.pr_title !== version.release_notes && (
+              <div>
+                <p className="mb-1 text-xs font-semibold text-muted-foreground">PR Title</p>
+                <p className="text-sm font-medium text-navy">{version.pr_title}</p>
+              </div>
+            )}
+
             {/* Release Notes */}
             {version.release_notes && (
               <div>
                 <p className="mb-1 text-xs font-semibold text-muted-foreground">Release Notes</p>
-                <p className="text-sm text-navy whitespace-pre-wrap">{version.release_notes}</p>
+                <div className="text-sm text-navy whitespace-pre-wrap max-h-64 overflow-y-auto">
+                  {version.release_notes}
+                </div>
               </div>
             )}
 
@@ -113,14 +199,27 @@ function VersionAccordionItem({ version }: { version: VersionLogItem }) {
               </div>
             )}
 
+            {/* PR Link */}
+            {version.pr_url && (
+              <div className="pt-1">
+                <a
+                  href={version.pr_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  View on GitHub
+                </a>
+              </div>
+            )}
+
             {/* Metadata */}
-            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-t pt-2">
               {version.release_date && (
                 <span>Released: {new Date(version.release_date).toLocaleDateString()}</span>
               )}
-              {version.deployed_by && (
-                <span>Deployed by: {version.deployed_by.slice(0, 8)}…</span>
-              )}
+              <span>Created: {new Date(version.created_at).toLocaleDateString()}</span>
             </div>
           </div>
         </CardContent>
@@ -136,8 +235,12 @@ export function AdminVersions() {
   const isOrgAdmin = role === 'org_admin'
 
   const [loading, setLoading] = useState(true)
-  const [versions, setVersions] = useState<VersionLogItem[]>([])
+  const [versions, setVersions] = useState<ChangelogEntry[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  // Sync state
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
 
   // Create release modal
   const [createOpen, setCreateOpen] = useState(false)
@@ -148,22 +251,55 @@ export function AdminVersions() {
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const loadVersions = async () => {
+  const loadVersions = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchAdminVersions()
-      setVersions(data)
+      // Try the enriched changelog endpoint first, fall back to basic versions
+      try {
+        const data = await fetchChangelog()
+        setVersions(data)
+      } catch {
+        // Fallback to basic versions endpoint (if changelog columns don't exist yet)
+        const data = await fetchAdminVersions()
+        setVersions(data.map((v) => ({
+          ...v,
+          pr_number: null,
+          pr_title: null,
+          pr_url: null,
+          source: 'manual',
+        })))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load versions')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     loadVersions()
-  }, [])
+  }, [loadVersions])
+
+  // ── GitHub Sync ─────────────────────────────────────────────────────────────
+  const handleGitHubSync = async () => {
+    setSyncing(true)
+    setSyncMessage(null)
+    try {
+      const result = await syncGitHubVersions()
+      setSyncMessage(result.message)
+      // Reload versions after sync
+      await loadVersions()
+    } catch (err) {
+      setSyncMessage(
+        err instanceof Error
+          ? `Sync failed: ${err.message}`
+          : 'GitHub sync failed. Check GITHUB_TOKEN config.'
+      )
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const handleCreate = async () => {
     if (!formTag) return
@@ -221,7 +357,20 @@ export function AdminVersions() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xl font-bold text-navy">Version History</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* GitHub Sync button (org_admin only) */}
+          {isOrgAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGitHubSync}
+              disabled={syncing}
+              className="gap-1.5"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync GitHub'}</span>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5">
             <Download className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Export CSV</span>
@@ -241,8 +390,25 @@ export function AdminVersions() {
         </div>
       </div>
 
+      {/* Sync message */}
+      {syncMessage && (
+        <div className={`rounded-lg p-3 text-sm ${
+          syncMessage.startsWith('Sync failed')
+            ? 'bg-red-50 text-red-700'
+            : 'bg-green-50 text-green-700'
+        }`}>
+          {syncMessage}
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground">
         {versions.length} version{versions.length !== 1 ? 's' : ''} recorded
+        {versions.some((v) => v.source === 'github_pr') && (
+          <span className="ml-2">
+            <GitBranch className="mr-0.5 inline h-3 w-3" />
+            Auto-synced from GitHub
+          </span>
+        )}
       </p>
 
       {/* Version list */}
@@ -259,8 +425,8 @@ export function AdminVersions() {
             <p className="font-medium text-navy">No versions yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {isOrgAdmin
-                ? 'Create the first release to start tracking.'
-                : 'Versions will appear here once created by an org_admin.'}
+                ? 'Click "Sync GitHub" to pull version history from PRs and releases, or create one manually.'
+                : 'Versions will appear here once synced or created by an org_admin.'}
             </p>
           </CardContent>
         </Card>
@@ -292,7 +458,7 @@ export function AdminVersions() {
                   className="mt-1"
                 />
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Format: vX.Y.Z or vX.Y.Z-beta
+                  Format: vX.Y.Z or vX.Y.Z-suffix
                 </p>
               </div>
 

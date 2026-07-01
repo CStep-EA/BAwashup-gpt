@@ -632,6 +632,38 @@ export function getVersionsExportUrl(): string {
   return `${API_URL}/admin/versions/export`
 }
 
+// GitHub sync for version auto-update
+export interface GitHubSyncResponse {
+  synced_releases: number
+  synced_prs: number
+  new_versions_created: number
+  message: string
+}
+
+export interface ChangelogEntry {
+  id: string
+  version_tag: string
+  release_date: string | null
+  release_notes: string | null
+  breaking_changes: string | null
+  bugs_resolved: string[] | null
+  pr_number: number | null
+  pr_title: string | null
+  pr_url: string | null
+  source: string | null
+  created_at: string
+}
+
+export async function syncGitHubVersions(): Promise<GitHubSyncResponse> {
+  return apiFetch<GitHubSyncResponse>('/admin/versions/sync-github', {
+    method: 'POST',
+  })
+}
+
+export async function fetchChangelog(limit = 50): Promise<ChangelogEntry[]> {
+  return apiFetch<ChangelogEntry[]>(`/admin/versions/changelog?limit=${limit}`)
+}
+
 // Audit Log
 export async function fetchAuditLog(params: {
   user_id?: string
