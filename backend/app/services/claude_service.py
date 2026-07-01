@@ -20,7 +20,8 @@ from app.core.prompts import BASE_SYSTEM_PROMPT, DOMAIN_ADDENDUM, REPORT_WRITING
 # Configuration (from Doc B §7.3)
 # ─────────────────────────────────────────────────────────────────────────────
 
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
+# Supported models: claude-sonnet-5, claude-opus-4-8, claude-haiku-4-5-20251001
 CHAT_MAX_TOKENS = 2048
 REPORT_MAX_TOKENS = 4096
 
