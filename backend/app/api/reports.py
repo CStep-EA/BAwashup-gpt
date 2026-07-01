@@ -249,14 +249,25 @@ async def generate_report(
         )
 
     pricing_block = f"PRICING:\n{pricing_str}\n\n" if pricing_str else ""
+    no_pricing_instruction = "" if body.include_pricing else (
+        "\nIMPORTANT: This report does NOT include pricing. "
+        "Do NOT mention prices, costs, or dollar amounts anywhere in the report.\n\n"
+    )
     context_text = (
         f"CUSTOMER: {body.customer_name} | OPERATION: {body.operation_name}\n"
         f"LOCATION: {location_name}\n"
         f"REP: {body.rep_name}, {body.rep_title}\n\n"
         f"PRODUCTS:\n{product_list_str}\n\n"
         f"{pricing_block}"
+        f"{no_pricing_instruction}"
         f"FINDINGS FROM VISIT:\n{body.findings}\n\n"
-        f"RECOMMENDATIONS:\n{body.recommendations}"
+        f"RECOMMENDATIONS:\n{body.recommendations}\n\n"
+        f"INSTRUCTIONS: Generate a complete customer-facing report using the "
+        f"required report structure from Section 5. Use ALL the information "
+        f"provided above. Do NOT ask clarifying questions - write the report "
+        f"with what you have. If findings or recommendations are brief, expand "
+        f"them with relevant expert context while staying faithful to what was "
+        f"provided. NEVER include meta-commentary about the data quality."
     )
 
     governance_data = {
@@ -270,8 +281,18 @@ async def generate_report(
         ],
         "location": location_name,
         "location_code": body.location_code.upper(),
-        "pricing": pricing_table if body.include_pricing else None,
     }
+    if body.include_pricing and pricing_table:
+        governance_data["pricing"] = pricing_table
+        governance_data["pricing_note"] = (
+            f"Pricing verified for {location_name} as of {report_date}."
+        )
+    else:
+        governance_data["pricing_instruction"] = (
+            "DO NOT include pricing in this report. The customer has not "
+            "requested pricing. Do not mention pricing, cost, price per unit, "
+            "or any dollar amounts. Focus on products, findings, and recommendations only."
+        )
 
     try:
         claude_result = call_claude(

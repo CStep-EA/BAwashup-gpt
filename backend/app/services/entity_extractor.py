@@ -46,6 +46,8 @@ _KNOWN_PRODUCTS = [
     "Curiass", "Pavise", "Shield", "Aegis", "ABS Express",
     "CD114", "Acid Foam", "Acid Blend", "Acidishine",
     "HydroSurge", "Chlor-Clean", "Power Wash",
+    "AgroClean", "Agroclean", "Derma-Kote", "DermaKote",
+    "Armor", "Arctic Shield", "Barrier Guard",
 ]
 
 _CONTAINER_PATTERNS = re.compile(
@@ -100,9 +102,13 @@ Extract the following entities from this query. Return ONLY valid JSON, nothing 
 
 Rules:
 - product_name: Extract the product name as mentioned (e.g., "Curiass", "Shield", \
-"CD114", "Pavise"). Keep the original name, don't add suffixes.
+"CD114", "Pavise", "AgroClean 305", "Derma-Kote"). Keep the original name exactly \
+as written. If the user says "tell me about X" or "what about X" or "info on X", \
+extract X as the product_name. Even if you don't recognize the product name, extract \
+it anyway - the system will verify if it exists.
 - location_code: Must be EXACTLY one of: EVANS, ULYSSES, JEROME, TURLOCK, TULARE. \
-If the user mentions a location by city name, map it. If no location, return null.
+If the user mentions a location by city name, map it. "my location" or "for my location" \
+does not count as a location - return null. If no location, return null.
 - container_size: Common sizes include 55-Gallon Drum, 275-Gallon Tote, \
 2.5-Gallon Jug, 5-Gallon Pail, 15-Gallon Drum, 30-Gallon Drum. If not mentioned, null.
 

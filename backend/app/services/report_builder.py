@@ -1,7 +1,8 @@
 """
 Bower Ag CowCare Tool — DOCX Report Builder
-Sprint 9: Builds customer-facing reports using python-docx.
+Sprint 9/21: Builds customer-facing reports using python-docx.
 
+Uses the official Bower Ag letterhead logo centered at top.
 Document B Section 5 structure: Cover, intro, findings, recommendations,
 pricing table, next steps, about Bower Ag.
 
@@ -9,7 +10,9 @@ pricing table, next steps, about Bower Ag.
 """
 
 import io
+import os
 import re
+from pathlib import Path
 from typing import Optional
 
 from docx import Document
@@ -25,9 +28,17 @@ from docx.oxml import parse_xml
 NAVY = RGBColor(0x0D, 0x1F, 0x3C)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 GRAY_LIGHT = RGBColor(0xF3, 0xF4, 0xF6)
+ACCENT_GREEN = RGBColor(0x4C, 0xAF, 0x50)
 FONT_BODY = "Calibri"
 FONT_SIZE_BODY = Pt(11)
 FONT_SIZE_HEADER = Pt(14)
+
+# Logo path — relative to this file
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
+LOGO_PATH = ASSETS_DIR / "bower_ag_logo.jpg"
+
+# Footer text from the sample report
+FOOTER_TEXT = "The Dairy Solutions Group PO Box 3640 Turlock, California 95381 P 209-669-6200 TDSG.US"
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -160,60 +171,73 @@ def build_report_docx(
     footer.is_linked_to_previous = False
     fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fr = fp.add_run(f"Prepared by Bower Ag | {report_date}")
-    fr.font.size = Pt(9)
+    fr = fp.add_run(FOOTER_TEXT)
+    fr.font.size = Pt(8)
     fr.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
     fr.font.name = FONT_BODY
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # PAGE 1: COVER
+    # PAGE 1: COVER WITH LOGO LETTERHEAD
     # ═══════════════════════════════════════════════════════════════════════════
 
-    # Spacer
-    for _ in range(4):
-        doc.add_paragraph()
+    # Centered Bower Ag logo
+    if LOGO_PATH.exists():
+        p_logo = doc.add_paragraph()
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p_logo.add_run()
+        run.add_picture(str(LOGO_PATH), width=Inches(2.0))
+    else:
+        # Fallback: text logo if image not found
+        p_logo = doc.add_paragraph()
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_logo = p_logo.add_run("BOWER AG")
+        r_logo.bold = True
+        r_logo.font.size = Pt(36)
+        r_logo.font.color.rgb = NAVY
+        r_logo.font.name = FONT_BODY
 
-    # BOWER AG logo placeholder
-    p_logo = doc.add_paragraph()
-    p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_logo = p_logo.add_run("BOWER AG")
-    r_logo.bold = True
-    r_logo.font.size = Pt(36)
-    r_logo.font.color.rgb = NAVY
-    r_logo.font.name = FONT_BODY
-
-    # Customer operation name
+    # Customer operation name — main title
     p_op = doc.add_paragraph()
     p_op.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_op.space_before = Pt(24)
-    r_op = p_op.add_run(operation_name)
-    r_op.font.size = Pt(24)
+    p_op.space_before = Pt(12)
+    r_op = p_op.add_run(f"{customer_name} – Cow Care Program Summary")
+    r_op.bold = True
+    r_op.font.size = Pt(18)
     r_op.font.color.rgb = NAVY
     r_op.font.name = FONT_BODY
 
-    # Subtitle
-    p_sub = doc.add_paragraph()
-    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_sub.space_before = Pt(6)
-    r_sub = p_sub.add_run("Cow Care Program Summary")
-    r_sub.font.size = Pt(18)
-    r_sub.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
-    r_sub.font.name = FONT_BODY
+    # Location line
+    p_loc = doc.add_paragraph()
+    p_loc.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_loc.space_before = Pt(6)
+    r_loc = p_loc.add_run(f"Location: {location_name}")
+    r_loc.font.size = Pt(12)
+    r_loc.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+    r_loc.font.name = FONT_BODY
+
+    # Prepared for
+    p_cust = doc.add_paragraph()
+    p_cust.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_cust.space_before = Pt(4)
+    r_cust = p_cust.add_run(f"Prepared for: {customer_name}")
+    r_cust.font.size = Pt(12)
+    r_cust.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+    r_cust.font.name = FONT_BODY
 
     # Prepared by
     p_rep = doc.add_paragraph()
     p_rep.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_rep.space_before = Pt(36)
+    p_rep.space_before = Pt(18)
     r_rep = p_rep.add_run(f"Prepared by: {rep_name}, {rep_title}")
-    r_rep.font.size = Pt(14)
+    r_rep.font.size = Pt(11)
     r_rep.font.name = FONT_BODY
 
     # Date
     p_date = doc.add_paragraph()
     p_date.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_date.space_before = Pt(6)
+    p_date.space_before = Pt(4)
     r_date = p_date.add_run(f"Date: {report_date}")
-    r_date.font.size = Pt(14)
+    r_date.font.size = Pt(11)
     r_date.font.name = FONT_BODY
 
     _add_horizontal_rule(doc)

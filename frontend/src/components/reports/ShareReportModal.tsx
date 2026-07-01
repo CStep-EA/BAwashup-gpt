@@ -1,25 +1,52 @@
 /**
- * ShareReportModal — Share a report with customer accounts.
- * Sprint 10: Customer search, confirmation, share execution.
+ * ShareReportModal — Share a report with any user (internal or customer).
+ * Sprint 21: Updated to allow sharing with internal team members as well.
  *
- * Only shows customer-role users in search results.
- * Clear confirmation before sharing with customer details.
+ * Searches all users (internal + customer) via /users endpoint.
+ * Displays role badge so the user knows who they're sharing with.
  */
 
 import { useState } from 'react'
-import { X, Search, Loader2, Check, Users, AlertCircle } from 'lucide-react'
+import { X, Search, Loader2, Check, Users, AlertCircle, Mail } from 'lucide-react'
 import { shareReport, apiFetchRaw } from '@/lib/api'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface CustomerAccount {
+interface UserAccount {
   id: string
-  email: string
+  email: string | null
   full_name: string | null
+  role: string
   customer_operation: string | null
 }
 
 type ShareStep = 'search' | 'confirm' | 'success' | 'error'
+
+// ─── Role Display Helper ─────────────────────────────────────────────────────
+
+function RoleBadge({ role }: { role: string }) {
+  const colors: Record<string, string> = {
+    customer: 'bg-blue-100 text-blue-700',
+    consultant: 'bg-green-100 text-green-700',
+    technician: 'bg-purple-100 text-purple-700',
+    account_manager: 'bg-amber-100 text-amber-700',
+    admin_manager: 'bg-red-100 text-red-700',
+    org_admin: 'bg-red-100 text-red-700',
+  }
+  const displayName: Record<string, string> = {
+    customer: 'Customer',
+    consultant: 'Consultant',
+    technician: 'Technician',
+    account_manager: 'Acct Manager',
+    admin_manager: 'Admin',
+    org_admin: 'Org Admin',
+  }
+  return (
+    <span className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium ${colors[role] || 'bg-gray-100 text-gray-600'}`}>
+      {displayName[role] || role}
+    </span>
+  )
+}
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -36,52 +63,73 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
   const [step, setStep] = useState<ShareStep>('search')
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [results, setResults] = useState<CustomerAccount[]>([])
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerAccount | null>(null)
+  const [results, setResults] = useState<UserAccount[]>([])
+  const [selectedUsers, setSelectedUsers] = useState<UserAccount[]>([])
   const [sharing, setSharing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // ── Search for customers ──
-  const handleSearch = async (query: string) => {
+  // Debounce timer ref
+  const [debounceTimer, setDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Search for users (debounced) ──
+  const handleSearch = (query: string) => {
     setSearchQuery(query)
+    
+    if (debounceTimer) clearTimeout(debounceTimer)
+    
     if (query.length < 2) {
       setResults([])
       return
     }
 
-    setSearching(true)
-    try {
-      // Call backend endpoint that searches users by role=customer
-      const res = await apiFetchRaw<CustomerAccount[]>(
-        `/users?role=customer&search=${encodeURIComponent(query)}`,
-      )
-      if (res.data) {
-        setResults(res.data)
-      } else {
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      try {
+        // Search all users (internal + customer)
+        const res = await apiFetchRaw<UserAccount[]>(
+          `/users?search=${encodeURIComponent(query)}`,
+        )
+        if (res.data) {
+          setResults(res.data)
+        } else {
+          setResults([])
+        }
+      } catch {
         setResults([])
+      } finally {
+        setSearching(false)
       }
-    } catch {
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
+    }, 300) // 300ms debounce
+
+    setDebounceTimer(timer)
   }
 
-  // ── Select customer → go to confirmation ──
-  const handleSelect = (customer: CustomerAccount) => {
-    setSelectedCustomer(customer)
+  // ── Toggle user selection ──
+  const handleToggleUser = (user: UserAccount) => {
+    setSelectedUsers((prev) => {
+      const exists = prev.find((u) => u.id === user.id)
+      if (exists) {
+        return prev.filter((u) => u.id !== user.id)
+      }
+      return [...prev, user]
+    })
+  }
+
+  // ── Go to confirmation ──
+  const handleNext = () => {
+    if (selectedUsers.length === 0) return
     setStep('confirm')
   }
 
   // ── Execute share ──
   const handleShare = async () => {
-    if (!selectedCustomer) return
+    if (selectedUsers.length === 0) return
     setSharing(true)
     setError(null)
 
     try {
       await shareReport(reportId, {
-        customer_user_ids: [selectedCustomer.id],
+        customer_user_ids: selectedUsers.map((u) => u.id),
       })
       setStep('success')
       onShared()
@@ -114,7 +162,7 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
           {step === 'search' && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Who would you like to share this with?
+                Search for team members or customers to share this report with.
               </p>
 
               {/* Search input */}
@@ -134,60 +182,105 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
                 )}
               </div>
 
+              {/* Selected users chips */}
+              {selectedUsers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedUsers.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => handleToggleUser(u)}
+                      className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent/20 transition-colors"
+                    >
+                      {u.full_name || u.email || 'User'}
+                      <X className="h-3 w-3" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Results */}
               <div className="max-h-48 space-y-1 overflow-y-auto">
-                {results.map((customer) => (
-                  <button
-                    key={customer.id}
-                    onClick={() => handleSelect(customer)}
-                    className="tap-target flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-gray-50"
-                    data-testid="customer-result"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100">
-                      <Users className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-navy truncate">
-                        {customer.full_name || customer.email}
-                      </p>
-                      {customer.customer_operation && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {customer.customer_operation}
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground truncate">{customer.email}</p>
-                    </div>
-                  </button>
-                ))}
+                {results.map((user) => {
+                  const isSelected = selectedUsers.some((u) => u.id === user.id)
+                  return (
+                    <button
+                      key={user.id}
+                      onClick={() => handleToggleUser(user)}
+                      className={`tap-target flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
+                        isSelected ? 'bg-accent/5 border border-accent/20' : 'hover:bg-gray-50'
+                      }`}
+                      data-testid="user-result"
+                    >
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                        isSelected ? 'bg-accent/20' : 'bg-blue-100'
+                      }`}>
+                        {isSelected ? (
+                          <Check className="h-4 w-4 text-accent" />
+                        ) : (
+                          <Users className="h-4 w-4 text-blue-600" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-navy truncate">
+                            {user.full_name || user.email || 'Unknown'}
+                          </p>
+                          <RoleBadge role={user.role} />
+                        </div>
+                        {user.email && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            <Mail className="mr-0.5 inline h-3 w-3" />
+                            {user.email}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
 
                 {searchQuery.length >= 2 && !searching && results.length === 0 && (
                   <div className="py-4 text-center">
                     <p className="text-sm text-muted-foreground">
-                      No customer account found.
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Ask your manager to create one.
+                      No users found matching &ldquo;{searchQuery}&rdquo;.
                     </p>
                   </div>
                 )}
               </div>
+
+              {/* Share button */}
+              {selectedUsers.length > 0 && (
+                <button
+                  onClick={handleNext}
+                  className="tap-target w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
+                >
+                  Share with {selectedUsers.length} {selectedUsers.length === 1 ? 'person' : 'people'}
+                </button>
+              )}
             </div>
           )}
 
           {/* Step 2: Confirmation */}
-          {step === 'confirm' && selectedCustomer && (
+          {step === 'confirm' && (
             <div className="space-y-4" data-testid="share-confirm">
               <p className="text-sm font-medium text-navy">
-                Share &ldquo;{reportTitle}&rdquo; with{' '}
-                {selectedCustomer.customer_operation || selectedCustomer.full_name || selectedCustomer.email}?
+                Share &ldquo;{reportTitle}&rdquo; with:
               </p>
-              <p className="text-sm text-muted-foreground">
-                {selectedCustomer.full_name || 'This customer'} will be able to log in to view and
-                download this report.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                They will <strong>NOT</strong> see any Bower Ag internal information — only the report
-                contents.
+              
+              <div className="space-y-2 rounded-lg bg-gray-50 p-3">
+                {selectedUsers.map((u) => (
+                  <div key={u.id} className="flex items-center gap-2">
+                    <Check className="h-3.5 w-3.5 text-green-600" />
+                    <span className="text-sm text-navy">
+                      {u.full_name || u.email}
+                    </span>
+                    <RoleBadge role={u.role} />
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Selected users will be able to view and download this report. 
+                Customer accounts will only see the report — no internal information.
               </p>
 
               <div className="flex gap-3 pt-2">
@@ -210,7 +303,7 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
                       Sharing...
                     </>
                   ) : (
-                    'Share'
+                    'Confirm Share'
                   )}
                 </button>
               </div>
@@ -218,17 +311,16 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
           )}
 
           {/* Step 3: Success */}
-          {step === 'success' && selectedCustomer && (
+          {step === 'success' && (
             <div className="flex flex-col items-center py-4 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
                 <Check className="h-6 w-6 text-green-600" />
               </div>
               <p className="mt-3 text-sm font-medium text-navy">
-                Report shared with{' '}
-                {selectedCustomer.customer_operation || selectedCustomer.full_name || 'customer'}.
+                Report shared with {selectedUsers.length} {selectedUsers.length === 1 ? 'person' : 'people'}.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                They can log in to view it.
+                They can now view and download this report.
               </p>
               <button
                 onClick={onClose}

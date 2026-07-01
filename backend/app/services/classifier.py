@@ -27,14 +27,19 @@ CLASSIFICATION_PROMPT = """\
 You are a dairy industry domain classifier for Bower Ag.
 
 Classify the following dairy query into EXACTLY ONE of these domains:
-- TEAT_DIP: teat dip products, pre-dip, post-dip, iodine, CLO2, Curiass, Pavise, Shield, germicide, emollient
-- CHEMICAL_CIP: CIP, clean-in-place, acid wash, alkaline, detergent, sanitizer, CD114, wash cycle, pipeline
-- PRICING: price, cost, per gallon, per drum, how much, what does it cost, sellable, available, do you carry
+- TEAT_DIP: teat dip products, pre-dip, post-dip, iodine, CLO2, Curiass, Pavise, Shield, Aegis, germicide, emollient, barrier dip, teat spray
+- CHEMICAL_CIP: CIP chemicals, clean-in-place, acid wash, alkaline, detergent, sanitizer, CD114, wash cycle, pipeline, AgroClean, HydroSurge, Chlor-Clean, Power Wash, Acid Foam, Acid Blend
+- PRICING: price, cost, per gallon, per drum, how much, what does it cost, sellable, available, do you carry, can I get, what products are available
 - TROUBLESHOOTING: bacteria, SPC, water quality, hardness, flow, pressure, liner, pulsation, vacuum, CIP flow, plug, clog
 - COW_HEALTH: mastitis, teat end, hyperkeratosis, scoring, dry cow, fresh cow, milking procedure, udder, calf, colostrum
 
-If the query involves pricing or cost of a product, ALWAYS classify as PRICING.
-If the query spans multiple domains, prioritize PRICING first, then product-specific, then advisory.
+IMPORTANT RULES:
+1. If the query involves pricing or cost of a product, ALWAYS classify as PRICING.
+2. If the query asks about product availability ("what's available", "what do you have", "what products"), classify as PRICING.
+3. If the query mentions a specific product by name (even if you don't recognize it), classify as CHEMICAL_CIP (the governance engine will verify if it exists).
+4. If the query says "tell me about [product name]" or asks for product info, classify it as TEAT_DIP or CHEMICAL_CIP based on context. Default to CHEMICAL_CIP if unclear.
+5. If the query spans multiple domains, prioritize PRICING first, then product-specific, then advisory.
+6. NEVER return UNKNOWN if the query mentions a product name. Product queries always belong to a product domain.
 
 Return ONLY the domain name (one word). Nothing else.
 
@@ -68,21 +73,23 @@ _KEYWORD_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(
         r"\b(price|pricing|cost|how much|per gallon|per drum|per pail|"
         r"per unit|what does .* cost|expense|quote|rate card|"
-        r"do you carry|available at|sell at|retail)\b",
+        r"do you carry|available at|sell at|retail|"
+        r"what.*(available|products|carry)|products available)\b",
         re.IGNORECASE,
     ), "PRICING"),
     # TEAT_DIP — teat dip products and related
     (re.compile(
         r"\b(teat dips?|pre[- ]?dips?|post[- ]?dips?|curiass|pavise|shield|"
         r"aegis|barrier dips?|germicide|emollient|iodine dip|"
-        r"chlorhexidine|clo2 dip|teat spray)\b",
+        r"chlorhexidine|clo2 dip|teat spray|derma.?kote|armor)\b",
         re.IGNORECASE,
     ), "TEAT_DIP"),
     # CHEMICAL_CIP — cleaning chemicals and CIP
     (re.compile(
         r"\b(cip|clean.in.place|acid wash|alkaline|detergent|sanitizer|"
         r"chlorinated|pipeline clean|wash cycle|cd114|acid foam|"
-        r"bulk tank clean|milk stone|rinse)\b",
+        r"bulk tank clean|milk stone|rinse|"
+        r"agroclean|hydrosurge|chlor.clean|power wash|acid blend|acidishine)\b",
         re.IGNORECASE,
     ), "CHEMICAL_CIP"),
     # TROUBLESHOOTING — dairy system issues

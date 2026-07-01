@@ -174,6 +174,7 @@ from app.api.conversation import router as conversation_router
 from app.api.session import router as session_router
 from app.api.products import router as products_router
 from app.api.reports import router as reports_router
+from app.api.users import router as users_router
 from app.api.admin_analytics import router as admin_analytics_router
 from app.api.admin_users import router as admin_users_router
 from app.api.admin_config import router as admin_config_router
@@ -216,6 +217,7 @@ app.include_router(conversation_router)
 app.include_router(session_router)
 app.include_router(products_router)
 app.include_router(reports_router)
+app.include_router(users_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_users_router)
 app.include_router(admin_config_router)
