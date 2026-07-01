@@ -539,7 +539,7 @@ export async function fetchAdminUsers(): Promise<AdminUserItem[]> {
 }
 
 export async function inviteUser(req: InviteUserRequest): Promise<InviteUserResponse> {
-  return apiFetch<InviteUserResponse>('/admin/users', {
+  return apiFetch<InviteUserResponse>('/admin/users/invite', {
     method: 'POST',
     body: req,
   })
