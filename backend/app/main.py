@@ -205,6 +205,7 @@ if _cors_origins:
             "Content-Type",
             "X-Location-Code",
             "X-Language",
+            "X-Session-ID",
         ],
     )
 
