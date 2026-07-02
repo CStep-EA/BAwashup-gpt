@@ -18,6 +18,7 @@ import {
   GitBranch,
   LogOut,
   ScrollText,
+  MessageSquarePlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
@@ -133,6 +134,22 @@ export function Sidebar() {
 
       {/* User / logout */}
       <div className="border-t border-white/10 p-4">
+        {/* Feedback shortcut */}
+        <NavLink
+          to="/feedback"
+          className={({ isActive }) =>
+            cn(
+              'mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              isActive
+                ? 'bg-barn-red/20 text-white'
+                : 'text-gray-400 hover:bg-white/5 hover:text-white'
+            )
+          }
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          <span>Report Bug / Idea</span>
+        </NavLink>
+
         <div className="mb-3 truncate text-sm text-gray-300">
           <p className="font-medium text-white">
             {profile?.full_name || 'Bower Ag User'}

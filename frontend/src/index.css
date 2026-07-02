@@ -20,7 +20,10 @@
   /* Semantic mappings */
   --color-navy: #333333;
   --color-navy-light: #4a4a4a;
+  --color-primary: #9b3426;
+  --color-primary-foreground: #ffffff;
   --color-accent: #9b3426;
+  --color-accent-foreground: #ffffff;
   --color-accent-hover: #7d2a1e;
   --color-success: #16a34a;
   --color-warning: #d97706;
@@ -75,13 +78,11 @@ input, select, textarea {
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);

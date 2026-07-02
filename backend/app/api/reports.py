@@ -93,6 +93,7 @@ class ReportDetailResponse(BaseModel):
 
 class ShareRequest(BaseModel):
     customer_user_ids: list[UUID]
+    emails: Optional[list[str]] = None  # External emails (admin/manager only)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -545,17 +546,29 @@ async def share_report(
     new_ids = [str(uid) for uid in body.customer_user_ids]
     merged_ids = list(set(existing_ids + new_ids))
 
+    # Handle email-based sharing (admin/manager only)
+    shared_emails = report.get("shared_with_emails") or []
+    if body.emails:
+        # Only admins/managers can share via external email
+        if user.role not in ADMIN_ROLES:
+            raise HTTPException(403, "Only admins and managers can share with external emails.")
+        shared_emails = list(set(shared_emails + [e.lower().strip() for e in body.emails]))
+
     try:
-        client.table("reports").update({
+        update_data: dict = {
             "shared_with_customer": True,
             "shared_with_user_ids": merged_ids,
-        }).eq("id", report_id).execute()
+        }
+        if body.emails:
+            update_data["shared_with_emails"] = shared_emails
+        client.table("reports").update(update_data).eq("id", report_id).execute()
     except Exception as e:
         raise HTTPException(500, f"Failed to share report: {str(e)[:200]}")
 
     return {
         "report_id": report_id,
         "shared_with_user_ids": merged_ids,
+        "shared_with_emails": shared_emails,
         "message": "Report shared successfully",
     }
 

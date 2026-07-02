@@ -374,3 +374,86 @@ async def update_bug(
     )
 
     return BugReportItem(**_normalize_bug(updated_bug, profiles_map))
+
+
+# ─── POST /admin/bugs ────────────────────────────────────────────────────────
+
+class CreateBugRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    severity: str = "medium"
+    category: Optional[str] = None  # "bug", "feature", "suggestion"
+    steps_to_reproduce: Optional[str] = None
+    expected_behavior: Optional[str] = None
+    actual_behavior: Optional[str] = None
+
+
+@router.post("", response_model=BugReportItem, status_code=status.HTTP_201_CREATED)
+async def create_bug(
+    body: CreateBugRequest,
+    user: CurrentUser = Depends(require_role(ADMIN_ROLES)),
+):
+    """
+    Manually create a bug report / feature request / suggestion.
+    Auth: admin_manager, org_admin.
+    """
+    client = get_supabase_client()
+
+    # Build insert data
+    insert_data: dict = {
+        "title": body.title.strip(),
+        "what_happened": body.description or "",
+        "description": body.description or "",
+        "severity": body.severity,
+        "status": "open",
+        "user_id": user.id,
+        "reporter_id": user.id,
+    }
+    if body.steps_to_reproduce:
+        insert_data["steps_to_reproduce"] = body.steps_to_reproduce
+    if body.expected_behavior:
+        insert_data["expected_behavior"] = body.expected_behavior
+    if body.actual_behavior:
+        insert_data["actual_behavior"] = body.actual_behavior
+
+    try:
+        result = (
+            client.table("bug_reports")
+            .insert(insert_data)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Failed to create bug report: {str(e)[:200]}")
+
+    if not result.data:
+        raise HTTPException(500, "Failed to create bug report — no data returned.")
+
+    new_bug = result.data[0]
+
+    # Build profile map for this user
+    profiles_map: dict = {}
+    try:
+        profile_result = (
+            client.table("profiles")
+            .select("id,full_name")
+            .eq("id", user.id)
+            .execute()
+        )
+        if profile_result.data:
+            profiles_map[user.id] = profile_result.data[0]
+    except Exception:
+        pass
+
+    fire_and_forget_audit(
+        user_id=user.id,
+        action="bug_created",
+        domain="admin",
+        query_text=body.title,
+        governance_result={
+            "bug_id": new_bug["id"],
+            "severity": body.severity,
+            "category": body.category,
+        },
+    )
+
+    return BugReportItem(**_normalize_bug(new_bug, profiles_map))

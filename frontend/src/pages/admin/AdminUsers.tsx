@@ -24,6 +24,7 @@ import {
   Check,
   Mail,
   Shield,
+  KeyRound,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import type { AdminUserItem, InviteUserRequest, UpdateUserRequest } from '@/lib/api'
@@ -32,6 +33,7 @@ import {
   inviteUser,
   updateUser,
   deactivateUser,
+  resetUserPassword,
 } from '@/lib/api'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -135,10 +137,18 @@ export function AdminUsers() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('consultant')
+  const [invitePassword, setInvitePassword] = useState('')
+  const [inviteUsePassword, setInviteUsePassword] = useState(false)
 
   // Edit form
   const [editRole, setEditRole] = useState('')
   const [editName, setEditName] = useState('')
+
+  // Password reset
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<AdminUserItem | null>(null)
+  const [resetPasswordValue, setResetPasswordValue] = useState('')
+  const [resetPasswordMode, setResetPasswordMode] = useState<'email' | 'manual'>('email')
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState<string | null>(null)
 
   const loadUsers = async () => {
     setLoading(true)
@@ -178,6 +188,10 @@ export function AdminUsers() {
 
   const handleInvite = async () => {
     if (!inviteEmail || !inviteName || !inviteRole) return
+    if (inviteUsePassword && invitePassword.length < 8) {
+      setFormError('Password must be at least 8 characters.')
+      return
+    }
     setFormLoading(true)
     setFormError(null)
     try {
@@ -186,11 +200,16 @@ export function AdminUsers() {
         role: inviteRole,
         full_name: inviteName,
       }
+      if (inviteUsePassword && invitePassword) {
+        req.temporary_password = invitePassword
+      }
       await inviteUser(req)
       setInviteOpen(false)
       setInviteEmail('')
       setInviteName('')
       setInviteRole('consultant')
+      setInvitePassword('')
+      setInviteUsePassword(false)
       await loadUsers()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Invite failed')
@@ -242,6 +261,31 @@ export function AdminUsers() {
       await loadUsers()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Deactivate failed')
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
+  // ─── Reset Password handler ────────────────────────────────────────────────
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordTarget) return
+    if (resetPasswordMode === 'manual' && resetPasswordValue.length < 8) {
+      setFormError('Password must be at least 8 characters.')
+      return
+    }
+    setFormLoading(true)
+    setFormError(null)
+    setResetPasswordSuccess(null)
+    try {
+      const result = await resetUserPassword(
+        resetPasswordTarget.id,
+        resetPasswordMode === 'manual' ? resetPasswordValue : undefined
+      )
+      setResetPasswordSuccess(result.message)
+      setResetPasswordValue('')
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Password reset failed')
     } finally {
       setFormLoading(false)
     }
@@ -374,6 +418,21 @@ export function AdminUsers() {
                                 <Edit2 className="h-4 w-4" />
                               </button>
                             )}
+                            {!isImmutable && (
+                              <button
+                                onClick={() => {
+                                  setFormError(null)
+                                  setResetPasswordSuccess(null)
+                                  setResetPasswordValue('')
+                                  setResetPasswordMode('email')
+                                  setResetPasswordTarget(u)
+                                }}
+                                className="rounded-lg p-1.5 text-muted-foreground hover:bg-blue-50 hover:text-blue-600"
+                                title="Reset password"
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </button>
+                            )}
                             {!isImmutable && !isCurrentUser && u.active && (
                               <button
                                 onClick={() => {
@@ -455,6 +514,30 @@ export function AdminUsers() {
                 <option key={r} value={r}>{r.replace('_', ' ')}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <input
+                id="invite-use-password"
+                type="checkbox"
+                checked={inviteUsePassword}
+                onChange={(e) => setInviteUsePassword(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="invite-use-password" className="text-sm font-normal text-muted-foreground">
+                Set a temporary password (skip email invite)
+              </Label>
+            </div>
+            {inviteUsePassword && (
+              <Input
+                type="password"
+                placeholder="Min 8 characters"
+                value={invitePassword}
+                onChange={(e) => setInvitePassword(e.target.value)}
+                className="mt-2"
+                minLength={8}
+              />
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setInviteOpen(false)}>
@@ -545,6 +628,113 @@ export function AdminUsers() {
               {formLoading ? 'Deactivating…' : 'Deactivate'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* ─── Reset Password Modal ─────────────────────────────────────────────── */}
+      <Modal
+        open={!!resetPasswordTarget}
+        onClose={() => {
+          setResetPasswordTarget(null)
+          setResetPasswordSuccess(null)
+        }}
+        title={`Reset Password — ${resetPasswordTarget?.full_name || 'User'}`}
+      >
+        <div className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>
+          )}
+          {resetPasswordSuccess && (
+            <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">
+              <Check className="mr-1 inline h-4 w-4" />
+              {resetPasswordSuccess}
+            </div>
+          )}
+
+          {!resetPasswordSuccess && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Choose how to reset the password for{' '}
+                <strong className="text-navy">{resetPasswordTarget?.email || resetPasswordTarget?.full_name}</strong>:
+              </p>
+
+              {/* Mode toggle */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setResetPasswordMode('email')}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    resetPasswordMode === 'email'
+                      ? 'border-accent bg-accent/5 text-accent'
+                      : 'border-gray-200 text-muted-foreground hover:bg-gray-50'
+                  }`}
+                >
+                  <Mail className="mb-1 mx-auto h-4 w-4" />
+                  Send Reset Email
+                </button>
+                <button
+                  onClick={() => setResetPasswordMode('manual')}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    resetPasswordMode === 'manual'
+                      ? 'border-accent bg-accent/5 text-accent'
+                      : 'border-gray-200 text-muted-foreground hover:bg-gray-50'
+                  }`}
+                >
+                  <KeyRound className="mb-1 mx-auto h-4 w-4" />
+                  Set Password
+                </button>
+              </div>
+
+              {resetPasswordMode === 'email' ? (
+                <p className="text-xs text-muted-foreground">
+                  A password reset link will be sent to the user&apos;s email.
+                  They will need to click the link and choose a new password.
+                </p>
+              ) : (
+                <div>
+                  <Label htmlFor="reset-password-value">New Password</Label>
+                  <Input
+                    id="reset-password-value"
+                    type="password"
+                    placeholder="Min 8 characters"
+                    value={resetPasswordValue}
+                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                    className="mt-1"
+                    minLength={8}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Set a temporary password. The user should change it on next login.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setResetPasswordTarget(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-accent text-white hover:bg-accent/90"
+                  onClick={handleResetPassword}
+                  disabled={formLoading || (resetPasswordMode === 'manual' && resetPasswordValue.length < 8)}
+                >
+                  {formLoading ? 'Processing…' : resetPasswordMode === 'email' ? 'Send Email' : 'Set Password'}
+                </Button>
+              </div>
+            </>
+          )}
+
+          {resetPasswordSuccess && (
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setResetPasswordTarget(null)
+                  setResetPasswordSuccess(null)
+                }}
+              >
+                Done
+              </Button>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

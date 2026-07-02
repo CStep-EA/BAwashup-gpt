@@ -38,7 +38,7 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 LOGO_PATH = ASSETS_DIR / "bower_ag_logo.jpg"
 
 # Footer text from the sample report
-FOOTER_TEXT = "The Dairy Solutions Group PO Box 3640 Turlock, California 95381 P 209-669-6200 TDSG.US"
+FOOTER_TEXT = "Bower Ag — Expert Dairy Solutions  |  BowerAg.com"
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
