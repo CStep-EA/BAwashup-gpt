@@ -139,9 +139,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     // Listen for auth state changes (session refresh, logout from other tab)
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       if (!session) {
         get().logout()
+      }
+      // If Supabase fires PASSWORD_RECOVERY (user clicked reset link),
+      // redirect to /reset-password regardless of current page.
+      // This handles the case where Supabase redirects to "/" instead of "/reset-password".
+      if (event === 'PASSWORD_RECOVERY') {
+        window.location.href = '/reset-password'
       }
     })
   },

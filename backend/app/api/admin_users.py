@@ -522,6 +522,145 @@ async def deactivate_user(
     return DeactivateResponse(message=f"{name} has been deactivated.")
 
 
+# ─── POST /admin/users/{user_id}/reactivate ──────────────────────────────────
+
+@router.post("/{user_id}/reactivate", response_model=DeactivateResponse)
+async def reactivate_user(
+    user_id: str,
+    user: CurrentUser = Depends(require_role(ADMIN_ROLES)),
+):
+    """
+    Re-activate a previously deactivated user.
+    Sets active=true in profiles AND unbans in Supabase auth.
+    """
+    client = get_supabase_client()
+
+    # Fetch current profile
+    try:
+        current_result = (
+            client.table("profiles")
+            .select("id,full_name,role,active")
+            .eq("id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Database error: {str(e)[:200]}")
+
+    if not current_result.data:
+        raise HTTPException(404, "User not found.")
+
+    current_profile = current_result.data[0]
+
+    if current_profile.get("active", True):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "User is already active.",
+        )
+
+    # Reactivate in profiles
+    try:
+        client.table("profiles").update({"active": True}).eq("id", user_id).execute()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to reactivate user: {str(e)[:200]}")
+
+    # Unban in Supabase auth (set ban_duration to "none" or 0)
+    try:
+        client.auth.admin.update_user_by_id(user_id, {"ban_duration": "none"})
+    except Exception as e:
+        print(f"[ADMIN] Failed to unban user {user_id} in auth: {e}")
+
+    # Audit log
+    fire_and_forget_audit(
+        user_id=user.id,
+        action="user_reactivated",
+        domain="admin",
+        query_text=user_id,
+        governance_result={
+            "target_user_id": user_id,
+            "full_name": current_profile.get("full_name"),
+            "role": current_profile["role"],
+            "before": {"active": False},
+            "after": {"active": True},
+        },
+    )
+
+    name = current_profile.get("full_name") or "User"
+    return DeactivateResponse(message=f"{name} has been reactivated.")
+
+
+# ─── DELETE /admin/users/{user_id}/permanent ─────────────────────────────────
+
+@router.delete("/{user_id}/permanent", response_model=DeactivateResponse)
+async def delete_user_permanent(
+    user_id: str,
+    user: CurrentUser = Depends(require_role(["org_admin"])),
+):
+    """
+    Permanently delete a user from Supabase auth AND profiles.
+    Only org_admin can perform this action.
+    Cannot delete yourself or other org_admins.
+    """
+    client = get_supabase_client()
+
+    # Fetch current profile
+    try:
+        current_result = (
+            client.table("profiles")
+            .select("id,full_name,role")
+            .eq("id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Database error: {str(e)[:200]}")
+
+    if not current_result.data:
+        raise HTTPException(404, "User not found.")
+
+    current_profile = current_result.data[0]
+
+    # ── Guard: cannot delete org_admin ──
+    if current_profile["role"] == "org_admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Org admin users cannot be deleted.",
+        )
+
+    # ── Guard: cannot delete yourself ──
+    if user_id == user.id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "You cannot delete your own account.",
+        )
+
+    # Delete profile row
+    try:
+        client.table("profiles").delete().eq("id", user_id).execute()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete profile: {str(e)[:200]}")
+
+    # Delete from Supabase auth
+    try:
+        client.auth.admin.delete_user(user_id)
+    except Exception as e:
+        print(f"[ADMIN] Failed to delete user {user_id} from auth: {e}")
+
+    # Audit log
+    fire_and_forget_audit(
+        user_id=user.id,
+        action="user_deleted_permanent",
+        domain="admin",
+        query_text=user_id,
+        governance_result={
+            "target_user_id": user_id,
+            "full_name": current_profile.get("full_name"),
+            "role": current_profile["role"],
+        },
+    )
+
+    name = current_profile.get("full_name") or "User"
+    return DeactivateResponse(message=f"{name} has been permanently deleted.")
+
+
 # ─── POST /admin/users/{user_id}/reset-password ──────────────────────────────
 
 @router.post("/{user_id}/reset-password", response_model=ResetPasswordResponse)

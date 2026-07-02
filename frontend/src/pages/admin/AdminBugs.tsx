@@ -25,7 +25,7 @@ import {
   Plus,
 } from 'lucide-react'
 import type { AdminBugReport, BugUpdateRequest, CreateBugRequest } from '@/lib/api'
-import { fetchAdminBugs, updateAdminBug, getAdminBugsExportUrl, createAdminBug } from '@/lib/api'
+import { fetchAdminBugs, updateAdminBug, downloadAdminBugsExport, createAdminBug } from '@/lib/api'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +92,14 @@ export function AdminBugs() {
   const [search, setSearch] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+
+  // Sorting
+  const [sortColumn, setSortColumn] = useState<'severity' | 'status' | 'created_at' | 'title'>('created_at')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+
+  // Grouping
+  const [groupBy, setGroupBy] = useState<'' | 'severity' | 'status'>('')
 
   // Detail panel
   const [selectedBug, setSelectedBug] = useState<AdminBugReport | null>(null)
@@ -164,13 +172,16 @@ export function AdminBugs() {
     }
   }
 
-  const handleExport = () => {
-    const url = getAdminBugsExportUrl({
-      severity: severityFilter || undefined,
-      status: statusFilter || undefined,
-      search: search || undefined,
-    })
-    window.open(url, '_blank')
+  const handleExport = async () => {
+    try {
+      await downloadAdminBugsExport({
+        severity: severityFilter || undefined,
+        status: statusFilter || undefined,
+        search: search || undefined,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed')
+    }
   }
 
   const handleCreate = async () => {
@@ -197,6 +208,69 @@ export function AdminBugs() {
       setCreateLoading(false)
     }
   }
+
+  // ─── Sorting & Filtering ────────────────────────────────────────────────────
+
+  const ARCHIVED_STATUSES = new Set(['closed', 'resolved', 'fixed', 'wont_fix'])
+
+  const handleSort = (col: typeof sortColumn) => {
+    if (sortColumn === col) {
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortColumn(col)
+      setSortDirection(col === 'created_at' ? 'desc' : 'asc')
+    }
+  }
+
+  const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+
+  const sortedBugs = [...bugs]
+    .filter((b) => showArchived ? ARCHIVED_STATUSES.has(b.status) : !ARCHIVED_STATUSES.has(b.status))
+    .sort((a, b) => {
+      let cmp = 0
+      switch (sortColumn) {
+        case 'severity':
+          cmp = (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99)
+          break
+        case 'status':
+          cmp = a.status.localeCompare(b.status)
+          break
+        case 'title':
+          cmp = (a.title || '').localeCompare(b.title || '')
+          break
+        case 'created_at':
+        default:
+          cmp = (a.created_at || '').localeCompare(b.created_at || '')
+          break
+      }
+      return sortDirection === 'asc' ? cmp : -cmp
+    })
+
+  // Grouping
+  const groupedBugs: { label: string; items: AdminBugReport[] }[] = groupBy
+    ? (() => {
+        const groups: Record<string, AdminBugReport[]> = {}
+        for (const bug of sortedBugs) {
+          const key = groupBy === 'severity' ? bug.severity : bug.status
+          if (!groups[key]) groups[key] = []
+          groups[key].push(bug)
+        }
+        // Order groups by severity or alphabetical
+        const keys = Object.keys(groups).sort((a, b) => {
+          if (groupBy === 'severity') {
+            return (SEVERITY_ORDER[a] ?? 99) - (SEVERITY_ORDER[b] ?? 99)
+          }
+          return a.localeCompare(b)
+        })
+        return keys.map((k) => ({ label: k, items: groups[k] }))
+      })()
+    : [{ label: '', items: sortedBugs }]
+
+  const SortIcon = ({ col }: { col: typeof sortColumn }) => (
+    <span className="ml-1 inline-block text-[10px]">
+      {sortColumn === col ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅'}
+    </span>
+  )
 
   if (loading) return <BugsSkeleton />
 
@@ -279,70 +353,118 @@ export function AdminBugs() {
             <option key={s} value={s}>{s.replace('_', ' ')}</option>
           ))}
         </select>
+        <select
+          value={groupBy}
+          onChange={(e) => setGroupBy(e.target.value as '' | 'severity' | 'status')}
+          className="rounded-lg border bg-white px-3 py-2 text-sm"
+        >
+          <option value="">No Grouping</option>
+          <option value="severity">Group by Severity</option>
+          <option value="status">Group by Status</option>
+        </select>
       </div>
 
-      <p className="text-xs text-muted-foreground">{bugs.length} bug report{bugs.length !== 1 ? 's' : ''}</p>
+      {/* Archive toggle + count */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {sortedBugs.length} {showArchived ? 'archived' : 'active'} bug report{sortedBugs.length !== 1 ? 's' : ''}
+        </p>
+        <button
+          onClick={() => setShowArchived(!showArchived)}
+          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            showArchived
+              ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              : 'bg-gray-100 text-muted-foreground hover:bg-gray-200'
+          }`}
+        >
+          {showArchived ? '← Back to Active' : 'View Archived'}
+        </button>
+      </div>
 
       {/* Bug list */}
-      {bugs.length > 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50 text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3">Title</th>
-                    <th className="px-4 py-3">Severity</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 hidden md:table-cell">Reporter</th>
-                    <th className="px-4 py-3 hidden sm:table-cell">Created</th>
-                    <th className="px-4 py-3 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bugs.map((bug) => (
-                    <tr
-                      key={bug.id}
-                      onClick={() => openDetail(bug)}
-                      className="cursor-pointer border-b last:border-0 hover:bg-gray-50/50"
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-navy line-clamp-1">{bug.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">
-                          {bug.description || '—'}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge label={bug.severity} colorMap={SEVERITY_COLORS} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge label={bug.status} colorMap={STATUS_COLORS} />
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
-                        {bug.reporter_name || '—'}
-                      </td>
-                      <td className="px-4 py-3 hidden sm:table-cell text-xs text-muted-foreground">
-                        {new Date(bug.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {sortedBugs.length > 0 ? (
+        <>
+          {groupedBugs.map((group) => (
+            <div key={group.label || 'all'}>
+              {group.label && (
+                <div className="mt-3 mb-1 flex items-center gap-2">
+                  <Badge label={group.label} colorMap={groupBy === 'severity' ? SEVERITY_COLORS : STATUS_COLORS} />
+                  <span className="text-xs text-muted-foreground">({group.items.length})</span>
+                </div>
+              )}
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50 text-left text-xs text-muted-foreground">
+                          <th className="px-4 py-3 cursor-pointer select-none hover:text-navy" onClick={() => handleSort('title')}>
+                            Title<SortIcon col="title" />
+                          </th>
+                          <th className="px-4 py-3 cursor-pointer select-none hover:text-navy" onClick={() => handleSort('severity')}>
+                            Severity<SortIcon col="severity" />
+                          </th>
+                          <th className="px-4 py-3 cursor-pointer select-none hover:text-navy" onClick={() => handleSort('status')}>
+                            Status<SortIcon col="status" />
+                          </th>
+                          <th className="px-4 py-3 hidden md:table-cell">Reporter</th>
+                          <th className="px-4 py-3 hidden sm:table-cell cursor-pointer select-none hover:text-navy" onClick={() => handleSort('created_at')}>
+                            Created<SortIcon col="created_at" />
+                          </th>
+                          <th className="px-4 py-3 w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.items.map((bug) => (
+                          <tr
+                            key={bug.id}
+                            onClick={() => openDetail(bug)}
+                            className="cursor-pointer border-b last:border-0 hover:bg-gray-50/50"
+                          >
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-navy line-clamp-1">{bug.title}</p>
+                              <p className="text-xs text-muted-foreground line-clamp-1">
+                                {bug.description || '\u2014'}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge label={bug.severity} colorMap={SEVERITY_COLORS} />
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge label={bug.status} colorMap={STATUS_COLORS} />
+                            </td>
+                            <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
+                              {bug.reporter_name || '\u2014'}
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell text-xs text-muted-foreground">
+                              {new Date(bug.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-3">
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
+          ))}
+        </>
       ) : (
         <Card>
           <CardContent className="py-8 text-center">
             <Bug className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-            <p className="font-medium text-navy">No bug reports</p>
+            <p className="font-medium text-navy">
+              {showArchived ? 'No archived bug reports' : 'No bug reports'}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {severityFilter || statusFilter || search
                 ? 'Try adjusting your filters.'
-                : 'No bugs have been reported yet.'}
+                : showArchived
+                  ? 'Resolved/closed bugs will appear here.'
+                  : 'No bugs have been reported yet.'}
             </p>
           </CardContent>
         </Card>
