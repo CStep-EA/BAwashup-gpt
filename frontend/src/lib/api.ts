@@ -320,6 +320,7 @@ export interface ReportGenerateResponse {
 
 export interface ShareReportRequest {
   customer_user_ids: string[]
+  emails?: string[]
 }
 
 export interface ShareReportResponse {
@@ -434,6 +435,7 @@ export interface InviteUserRequest {
   role: string
   location_id?: string
   full_name: string
+  temporary_password?: string
 }
 
 export interface InviteUserResponse {
@@ -441,6 +443,11 @@ export interface InviteUserResponse {
   email: string
   role: string
   message: string
+}
+
+export interface ResetPasswordResponse {
+  message: string
+  method: string
 }
 
 export interface UpdateUserRequest {
@@ -558,6 +565,20 @@ export async function deactivateUser(userId: string): Promise<{ message: string 
   })
 }
 
+export async function resetUserPassword(
+  userId: string,
+  temporaryPassword?: string,
+): Promise<ResetPasswordResponse> {
+  const body: { temporary_password?: string } = {}
+  if (temporaryPassword) {
+    body.temporary_password = temporaryPassword
+  }
+  return apiFetch<ResetPasswordResponse>(`/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    body,
+  })
+}
+
 // System Config
 export async function fetchAdminConfig(): Promise<ConfigItem[]> {
   return apiFetch<ConfigItem[]>('/admin/config')
@@ -614,6 +635,44 @@ export function getAdminBugsExportUrl(params: {
   if (params.search) sp.set('search', params.search)
   const qs = sp.toString()
   return `${API_URL}/admin/bugs/export${qs ? `?${qs}` : ''}`
+}
+
+// Create bug (Admin)
+export interface CreateBugRequest {
+  title: string
+  description?: string
+  severity?: string
+  category?: string
+  steps_to_reproduce?: string
+  expected_behavior?: string
+  actual_behavior?: string
+}
+
+export async function createAdminBug(req: CreateBugRequest): Promise<AdminBugReport> {
+  return apiFetch<AdminBugReport>('/admin/bugs', {
+    method: 'POST',
+    body: req,
+  })
+}
+
+// Submit bug/suggestion (any authenticated user)
+export interface SubmitFeedbackRequest {
+  title: string
+  what_happened: string
+  expected_behavior?: string
+  severity?: string
+}
+
+export interface SubmitFeedbackResponse {
+  id: string
+  message: string
+}
+
+export async function submitFeedbackBug(req: SubmitFeedbackRequest): Promise<SubmitFeedbackResponse> {
+  return apiFetch<SubmitFeedbackResponse>('/bugs', {
+    method: 'POST',
+    body: req,
+  })
 }
 
 // Version Log

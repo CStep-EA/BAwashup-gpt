@@ -177,6 +177,7 @@ from app.api.reports import router as reports_router
 from app.api.users import router as users_router
 from app.api.admin_analytics import router as admin_analytics_router
 from app.api.admin_users import router as admin_users_router
+from app.api.admin_users import public_auth_router
 from app.api.admin_config import router as admin_config_router
 from app.api.admin_bugs import router as admin_bugs_router
 from app.api.admin_versions import router as admin_versions_router
@@ -220,6 +221,7 @@ app.include_router(reports_router)
 app.include_router(users_router)
 app.include_router(admin_analytics_router)
 app.include_router(admin_users_router)
+app.include_router(public_auth_router)
 app.include_router(admin_config_router)
 app.include_router(admin_bugs_router)
 app.include_router(admin_versions_router)

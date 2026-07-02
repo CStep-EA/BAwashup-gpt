@@ -5,11 +5,11 @@
  * Renders <Outlet /> for nested routes.
  */
 
-import { Outlet } from 'react-router-dom'
+import { Outlet, Link } from 'react-router-dom'
 import { BottomNav } from './BottomNav'
 import { Sidebar } from './Sidebar'
 import { useAuthStore } from '@/store/auth'
-import { LogOut, Menu } from 'lucide-react'
+import { LogOut, Menu, MessageSquarePlus } from 'lucide-react'
 import { useState } from 'react'
 
 export function AppLayout() {
@@ -91,6 +91,17 @@ export function AppLayout() {
         {/* Page content */}
         <main className="flex-1 pb-20 lg:pb-4">
           <Outlet />
+
+          {/* Feedback shortcut — mobile only (desktop uses sidebar link) */}
+          <div className="mt-6 flex items-center justify-center pb-4 lg:hidden">
+            <Link
+              to="/feedback"
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:border-accent hover:text-accent"
+            >
+              <MessageSquarePlus className="h-3.5 w-3.5" />
+              Report Bug or Suggest Feature
+            </Link>
+          </div>
         </main>
       </div>
 

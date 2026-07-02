@@ -47,6 +47,8 @@ import { CustomerLayout } from '@/layouts/CustomerLayout'
 
 // Public pages
 import { LoginPage } from '@/pages/LoginPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { OfflinePage } from '@/pages/OfflinePage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 
@@ -57,6 +59,7 @@ import { ProductLookupPage } from '@/pages/ProductLookupPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { ReportPreviewPage } from '@/pages/ReportPreviewPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { SubmitFeedbackPage } from '@/pages/SubmitFeedbackPage'
 
 // Customer pages
 import { CustomerReportsPage } from '@/pages/customer/CustomerReportsPage'
@@ -78,6 +81,8 @@ function App() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/offline" element={<OfflinePage />} />
 
       {/* Authenticated routes */}
@@ -99,6 +104,7 @@ function App() {
             <Route path="reports" element={<ReportsPage />} />
             <Route path="reports/:reportId/preview" element={<ReportPreviewPage />} />
             <Route path="media/jobs/:jobId" element={<MediaJobStatusPage />} />
+            <Route path="feedback" element={<SubmitFeedbackPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
 

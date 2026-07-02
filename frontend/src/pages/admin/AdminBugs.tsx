@@ -22,9 +22,10 @@ import {
   Check,
   RefreshCw,
   Save,
+  Plus,
 } from 'lucide-react'
-import type { AdminBugReport, BugUpdateRequest } from '@/lib/api'
-import { fetchAdminBugs, updateAdminBug, getAdminBugsExportUrl } from '@/lib/api'
+import type { AdminBugReport, BugUpdateRequest, CreateBugRequest } from '@/lib/api'
+import { fetchAdminBugs, updateAdminBug, getAdminBugsExportUrl, createAdminBug } from '@/lib/api'
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,15 @@ export function AdminBugs() {
   const [updateLoading, setUpdateLoading] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
 
+  // Create new bug
+  const [showCreate, setShowCreate] = useState(false)
+  const [createTitle, setCreateTitle] = useState('')
+  const [createDescription, setCreateDescription] = useState('')
+  const [createSeverity, setCreateSeverity] = useState('medium')
+  const [createCategory, setCreateCategory] = useState('bug')
+  const [createLoading, setCreateLoading] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
   const loadBugs = async () => {
     setLoading(true)
     setError(null)
@@ -163,6 +173,31 @@ export function AdminBugs() {
     window.open(url, '_blank')
   }
 
+  const handleCreate = async () => {
+    if (!createTitle.trim()) return
+    setCreateLoading(true)
+    setCreateError(null)
+    try {
+      const req: CreateBugRequest = {
+        title: createTitle.trim(),
+        description: createDescription.trim() || undefined,
+        severity: createSeverity,
+        category: createCategory,
+      }
+      await createAdminBug(req)
+      setShowCreate(false)
+      setCreateTitle('')
+      setCreateDescription('')
+      setCreateSeverity('medium')
+      setCreateCategory('bug')
+      loadBugs()
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create')
+    } finally {
+      setCreateLoading(false)
+    }
+  }
+
   if (loading) return <BugsSkeleton />
 
   if (error) {
@@ -189,6 +224,14 @@ export function AdminBugs() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xl font-bold text-navy">Bug Reports</h2>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => setShowCreate(true)}
+            className="gap-1.5 bg-accent text-white hover:bg-accent/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Create New</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={loadBugs} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
@@ -303,6 +346,82 @@ export function AdminBugs() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* ─── Create New Panel ─────────────────────────────────────────────── */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-navy">Create New Issue</h3>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="rounded-lg p-1 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {createError && (
+              <div className="mb-3 rounded bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                {createError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Category</label>
+                <select
+                  value={createCategory}
+                  onChange={(e) => setCreateCategory(e.target.value)}
+                  className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                >
+                  <option value="bug">Bug Report</option>
+                  <option value="feature">Feature Request</option>
+                  <option value="suggestion">Suggestion</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Title</label>
+                <Input
+                  value={createTitle}
+                  onChange={(e) => setCreateTitle(e.target.value)}
+                  placeholder="Brief summary of the issue…"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Description</label>
+                <textarea
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  placeholder="Describe the issue, feature, or suggestion in detail…"
+                  className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm min-h-[100px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Severity</label>
+                <select
+                  value={createSeverity}
+                  onChange={(e) => setCreateSeverity(e.target.value)}
+                  className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
+                >
+                  {SEVERITY_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                className="w-full gap-2 bg-accent text-white hover:bg-accent/90"
+                onClick={handleCreate}
+                disabled={createLoading || !createTitle.trim()}
+              >
+                <Plus className="h-4 w-4" />
+                {createLoading ? 'Creating…' : 'Create Issue'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ─── Detail Panel ──────────────────────────────────────────────────── */}

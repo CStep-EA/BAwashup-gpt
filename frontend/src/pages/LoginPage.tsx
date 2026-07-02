@@ -5,7 +5,7 @@
  */
 
 import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -90,12 +90,20 @@ export function LoginPage() {
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="text-sm font-medium text-foreground"
-            >
-              Password
-            </label>
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="password"
+                className="text-sm font-medium text-foreground"
+              >
+                Password
+              </label>
+              <Link
+                to="/forgot-password"
+                className="text-xs font-medium text-accent hover:text-accent-hover transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"
@@ -122,6 +130,16 @@ export function LoginPage() {
               'Sign In'
             )}
           </Button>
+
+          {/* Forgot Password Link */}
+          <div className="text-center">
+            <Link
+              to="/forgot-password"
+              className="text-sm font-medium text-accent hover:text-accent-hover transition-colors"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </form>
 
         {/* Footer */}

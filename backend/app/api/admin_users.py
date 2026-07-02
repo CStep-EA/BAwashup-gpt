@@ -1,6 +1,6 @@
 """
 Bower Ag CowCare Tool — Admin User Management API
-Sprint 11: User invite, list, update, deactivate for admin portal.
+Sprint 11+: User invite, list, update, deactivate, password management.
 
 Role guards:
   - No one can create or change TO org_admin role
@@ -12,6 +12,7 @@ All mutations are logged to audit_log with before/after values.
 Auth: admin_manager, org_admin.
 """
 
+import os
 import json
 from datetime import datetime, timezone
 from typing import Optional
@@ -43,6 +44,7 @@ class InviteRequest(BaseModel):
     role: str = Field(..., description="Role to assign. Cannot be 'org_admin'.")
     location_id: Optional[str] = None
     full_name: str = Field(..., min_length=1)
+    temporary_password: Optional[str] = Field(None, min_length=8, description="Optional password to set immediately")
 
 
 class InviteResponse(BaseModel):
@@ -69,6 +71,15 @@ class UpdateUserResponse(BaseModel):
 
 class DeactivateResponse(BaseModel):
     message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    temporary_password: Optional[str] = Field(None, min_length=8, description="Set a specific password. If omitted, sends a reset email.")
+
+
+class ResetPasswordResponse(BaseModel):
+    message: str
+    method: str  # "email" or "manual"
 
 
 # ─── GET /admin/users ─────────────────────────────────────────────────────────
@@ -231,9 +242,35 @@ async def invite_user(
 
     # ── Invite user via Supabase auth ──
     try:
-        invite_result = client.auth.admin.invite_user_by_email(body.email)
-        new_user = invite_result.user
-        new_user_id = new_user.id
+        # Get the frontend URL for invite redirect
+        frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+        if not frontend_url:
+            # Fallback: derive from ALLOWED_ORIGINS
+            allowed = os.getenv("ALLOWED_ORIGINS", "")
+            if allowed:
+                frontend_url = allowed.split(",")[0].strip().rstrip("/")
+
+        if body.temporary_password:
+            # Create user directly with a password (no email invite needed)
+            create_result = client.auth.admin.create_user({
+                "email": body.email,
+                "password": body.temporary_password,
+                "email_confirm": True,  # Mark email as confirmed
+            })
+            new_user = create_result.user
+            new_user_id = new_user.id
+        else:
+            # Send magic-link invite with redirect to our frontend
+            redirect_url = f"{frontend_url}/reset-password" if frontend_url else None
+            invite_options = {"email": body.email}
+            if redirect_url:
+                invite_options["redirect_to"] = redirect_url
+            invite_result = client.auth.admin.invite_user_by_email(
+                body.email,
+                options={"redirect_to": redirect_url} if redirect_url else {}
+            )
+            new_user = invite_result.user
+            new_user_id = new_user.id
     except Exception as e:
         raise HTTPException(500, f"Failed to send invitation: {str(e)[:200]}")
 
@@ -483,3 +520,177 @@ async def deactivate_user(
 
     name = current_profile.get("full_name") or "User"
     return DeactivateResponse(message=f"{name} has been deactivated.")
+
+
+# ─── POST /admin/users/{user_id}/reset-password ──────────────────────────────
+
+@router.post("/{user_id}/reset-password", response_model=ResetPasswordResponse)
+async def reset_user_password(
+    user_id: str,
+    body: ResetPasswordRequest,
+    user: CurrentUser = Depends(require_role(ADMIN_ROLES)),
+):
+    """
+    Reset a user's password.
+
+    Two modes:
+      1. If temporary_password is provided: set password directly (admin override).
+      2. If not: send a password reset email to the user.
+
+    Guards:
+      - Cannot reset org_admin password (unless caller is org_admin)
+      - Target user must exist
+    """
+    client = get_supabase_client()
+
+    # Fetch current profile
+    try:
+        current_result = (
+            client.table("profiles")
+            .select("id,full_name,role")
+            .eq("id", user_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Database error: {str(e)[:200]}")
+
+    if not current_result.data:
+        raise HTTPException(404, "User not found.")
+
+    current_profile = current_result.data[0]
+
+    # ── Guard: only org_admin can reset org_admin password ──
+    if current_profile["role"] == "org_admin" and user.role != "org_admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only org_admin can reset another org_admin's password.",
+        )
+
+    if body.temporary_password:
+        # Mode 1: Set password directly
+        try:
+            client.auth.admin.update_user_by_id(
+                user_id, {"password": body.temporary_password}
+            )
+        except Exception as e:
+            raise HTTPException(500, f"Failed to set password: {str(e)[:200]}")
+
+        fire_and_forget_audit(
+            user_id=user.id,
+            action="password_reset_manual",
+            domain="admin",
+            query_text=user_id,
+            governance_result={
+                "target_user_id": user_id,
+                "full_name": current_profile.get("full_name"),
+                "method": "manual",
+            },
+        )
+
+        name = current_profile.get("full_name") or "User"
+        return ResetPasswordResponse(
+            message=f"Password set for {name}. They can now log in with the new password.",
+            method="manual",
+        )
+    else:
+        # Mode 2: Send reset email
+        # Get user email from auth
+        try:
+            auth_users = client.auth.admin.list_users()
+            user_list = auth_users if isinstance(auth_users, list) else getattr(auth_users, "users", auth_users)
+            target_email = None
+            if isinstance(user_list, list):
+                for au in user_list:
+                    uid = getattr(au, "id", None) or (au.get("id") if isinstance(au, dict) else None)
+                    if str(uid) == user_id:
+                        target_email = getattr(au, "email", None) or (au.get("email") if isinstance(au, dict) else None)
+                        break
+
+            if not target_email:
+                raise HTTPException(404, "Could not find user email.")
+
+            # Get frontend URL for redirect
+            frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+            if not frontend_url:
+                allowed = os.getenv("ALLOWED_ORIGINS", "")
+                if allowed:
+                    frontend_url = allowed.split(",")[0].strip().rstrip("/")
+
+            redirect_url = f"{frontend_url}/reset-password" if frontend_url else None
+
+            # Use the anon client for password reset (respects site URL config)
+            from app.db.supabase_client import get_supabase_anon_client
+            anon_client = get_supabase_anon_client()
+            
+            reset_options = {}
+            if redirect_url:
+                reset_options["redirect_to"] = redirect_url
+            
+            anon_client.auth.reset_password_email(target_email, options=reset_options)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Failed to send reset email: {str(e)[:200]}")
+
+        fire_and_forget_audit(
+            user_id=user.id,
+            action="password_reset_email",
+            domain="admin",
+            query_text=user_id,
+            governance_result={
+                "target_user_id": user_id,
+                "full_name": current_profile.get("full_name"),
+                "method": "email",
+                "email": target_email,
+            },
+        )
+
+        name = current_profile.get("full_name") or "User"
+        return ResetPasswordResponse(
+            message=f"Password reset email sent to {target_email}.",
+            method="email",
+        )
+
+
+# ─── POST /auth/forgot-password ─────────────────────────────────────────────
+# This is a public endpoint (no auth required)
+
+from fastapi import Body
+
+public_auth_router = APIRouter(tags=["Auth"])
+
+
+@public_auth_router.post("/auth/forgot-password")
+async def forgot_password(
+    email: str = Body(..., embed=True),
+):
+    """
+    Public endpoint: Send a password reset email.
+    No authentication required — used from the login page.
+    
+    Always returns success to prevent email enumeration attacks.
+    """
+    from app.db.supabase_client import get_supabase_anon_client
+
+    frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+    if not frontend_url:
+        allowed = os.getenv("ALLOWED_ORIGINS", "")
+        if allowed:
+            frontend_url = allowed.split(",")[0].strip().rstrip("/")
+
+    redirect_url = f"{frontend_url}/reset-password" if frontend_url else None
+
+    try:
+        anon_client = get_supabase_anon_client()
+        reset_options = {}
+        if redirect_url:
+            reset_options["redirect_to"] = redirect_url
+        anon_client.auth.reset_password_email(email, options=reset_options)
+    except Exception:
+        # Always return success to prevent email enumeration
+        pass
+
+    return {
+        "message": "If an account exists with that email, a password reset link has been sent."
+    }

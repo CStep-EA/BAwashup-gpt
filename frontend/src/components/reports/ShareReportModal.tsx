@@ -1,14 +1,17 @@
 /**
  * ShareReportModal — Share a report with any user (internal or customer).
- * Sprint 21: Updated to allow sharing with internal team members as well.
+ * Sprint 21+: Updated sharing permissions:
+ * - Admins/Managers: can share to ANY email (including external emails)
+ * - Other roles: can share to internal users + customers via search
  *
  * Searches all users (internal + customer) via /users endpoint.
- * Displays role badge so the user knows who they're sharing with.
+ * Admins/Managers get an additional "share by email" option for external sharing.
  */
 
 import { useState } from 'react'
-import { X, Search, Loader2, Check, Users, AlertCircle, Mail } from 'lucide-react'
+import { X, Search, Loader2, Check, Users, AlertCircle, Mail, AtSign } from 'lucide-react'
 import { shareReport, apiFetchRaw } from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -60,6 +63,9 @@ interface ShareReportModalProps {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: ShareReportModalProps) {
+  const { role } = useAuthStore()
+  const isAdminOrManager = role === 'org_admin' || role === 'admin_manager'
+
   const [step, setStep] = useState<ShareStep>('search')
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -67,6 +73,10 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
   const [selectedUsers, setSelectedUsers] = useState<UserAccount[]>([])
   const [sharing, setSharing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Admin email sharing
+  const [emailInput, setEmailInput] = useState('')
+  const [emailList, setEmailList] = useState<string[]>([])
 
   // Debounce timer ref
   const [debounceTimer, setDebounceTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
@@ -117,19 +127,35 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
 
   // ── Go to confirmation ──
   const handleNext = () => {
-    if (selectedUsers.length === 0) return
+    if (selectedUsers.length === 0 && emailList.length === 0) return
     setStep('confirm')
+  }
+
+  // ── Add email to list (admin/manager only) ──
+  const handleAddEmail = () => {
+    const trimmed = emailInput.trim().toLowerCase()
+    if (!trimmed || !trimmed.includes('@')) return
+    if (emailList.includes(trimmed)) return
+    // Don't add if already selected as a user
+    if (selectedUsers.some((u) => u.email?.toLowerCase() === trimmed)) return
+    setEmailList((prev) => [...prev, trimmed])
+    setEmailInput('')
+  }
+
+  const handleRemoveEmail = (email: string) => {
+    setEmailList((prev) => prev.filter((e) => e !== email))
   }
 
   // ── Execute share ──
   const handleShare = async () => {
-    if (selectedUsers.length === 0) return
+    if (selectedUsers.length === 0 && emailList.length === 0) return
     setSharing(true)
     setError(null)
 
     try {
       await shareReport(reportId, {
         customer_user_ids: selectedUsers.map((u) => u.id),
+        emails: emailList.length > 0 ? emailList : undefined,
       })
       setStep('success')
       onShared()
@@ -162,8 +188,59 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
           {step === 'search' && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Search for team members or customers to share this report with.
+                {isAdminOrManager
+                  ? 'Search for users or enter any email address to share this report.'
+                  : 'Search for team members or customers to share this report with.'}
               </p>
+
+              {/* Admin/Manager: Email input for external sharing */}
+              {isAdminOrManager && (
+                <div>
+                  <div className="relative flex gap-2">
+                    <div className="relative flex-1">
+                      <AtSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="email"
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleAddEmail()
+                          }
+                        }}
+                        placeholder="Enter any email…"
+                        className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-base outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <button
+                      onClick={handleAddEmail}
+                      disabled={!emailInput.trim() || !emailInput.includes('@')}
+                      className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {emailList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {emailList.map((email) => (
+                        <button
+                          key={email}
+                          onClick={() => handleRemoveEmail(email)}
+                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                        >
+                          <Mail className="h-3 w-3" />
+                          {email}
+                          <X className="h-3 w-3" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 border-t pt-2">
+                    <p className="text-xs text-muted-foreground">Or search existing users:</p>
+                  </div>
+                </div>
+              )}
 
               {/* Search input */}
               <div className="relative">
@@ -174,7 +251,7 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
                   onChange={(e) => handleSearch(e.target.value)}
                   placeholder="Search by email or name..."
                   className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-base outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-                  autoFocus
+                  autoFocus={!isAdminOrManager}
                   data-testid="share-search-input"
                 />
                 {searching && (
@@ -248,12 +325,12 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
               </div>
 
               {/* Share button */}
-              {selectedUsers.length > 0 && (
+              {(selectedUsers.length > 0 || emailList.length > 0) && (
                 <button
                   onClick={handleNext}
                   className="tap-target w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-hover"
                 >
-                  Share with {selectedUsers.length} {selectedUsers.length === 1 ? 'person' : 'people'}
+                  Share with {selectedUsers.length + emailList.length} {(selectedUsers.length + emailList.length) === 1 ? 'person' : 'people'}
                 </button>
               )}
             </div>
@@ -276,11 +353,20 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
                     <RoleBadge role={u.role} />
                   </div>
                 ))}
+                {emailList.map((email) => (
+                  <div key={email} className="flex items-center gap-2">
+                    <Mail className="h-3.5 w-3.5 text-blue-600" />
+                    <span className="text-sm text-navy">{email}</span>
+                    <span className="inline-block rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+                      Email
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <p className="text-xs text-muted-foreground">
                 Selected users will be able to view and download this report. 
-                Customer accounts will only see the report — no internal information.
+                {emailList.length > 0 && ' External emails will receive a notification with report access.'}
               </p>
 
               <div className="flex gap-3 pt-2">
@@ -317,7 +403,7 @@ export function ShareReportModal({ reportId, reportTitle, onClose, onShared }: S
                 <Check className="h-6 w-6 text-green-600" />
               </div>
               <p className="mt-3 text-sm font-medium text-navy">
-                Report shared with {selectedUsers.length} {selectedUsers.length === 1 ? 'person' : 'people'}.
+                Report shared with {selectedUsers.length + emailList.length} {(selectedUsers.length + emailList.length) === 1 ? 'person' : 'people'}.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 They can now view and download this report.
