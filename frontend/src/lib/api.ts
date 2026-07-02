@@ -565,6 +565,18 @@ export async function deactivateUser(userId: string): Promise<{ message: string 
   })
 }
 
+export async function reactivateUser(userId: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/admin/users/${userId}/reactivate`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteUserPermanent(userId: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/admin/users/${userId}/permanent`, {
+    method: 'DELETE',
+  })
+}
+
 export async function resetUserPassword(
   userId: string,
   temporaryPassword?: string,
@@ -620,6 +632,41 @@ export async function updateAdminBug(bugId: string, req: BugUpdateRequest): Prom
   })
 }
 
+export async function downloadAdminBugsExport(params: {
+  severity?: string
+  status?: string
+  version_tag?: string
+  days?: number
+  search?: string
+} = {}): Promise<void> {
+  const sp = new URLSearchParams()
+  if (params.severity) sp.set('severity', params.severity)
+  if (params.status) sp.set('status', params.status)
+  if (params.version_tag) sp.set('version_tag', params.version_tag)
+  if (params.days) sp.set('days', String(params.days))
+  if (params.search) sp.set('search', params.search)
+  const qs = sp.toString()
+  const url = `/admin/bugs/export${qs ? `?${qs}` : ''}`
+
+  const headers = await getAuthHeaders()
+  const res = await fetch(`${API_URL}${url}`, { headers })
+
+  if (!res.ok) {
+    throw new Error(`Export failed: ${res.status}`)
+  }
+
+  const blob = await res.blob()
+  const downloadUrl = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = downloadUrl
+  a.download = 'bug_reports.csv'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.URL.revokeObjectURL(downloadUrl)
+}
+
+/** @deprecated Use downloadAdminBugsExport instead — this won't pass auth token */
 export function getAdminBugsExportUrl(params: {
   severity?: string
   status?: string

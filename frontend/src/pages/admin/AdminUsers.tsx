@@ -19,6 +19,8 @@ import {
   Search,
   Edit2,
   UserX,
+  UserCheck,
+  Trash2,
   AlertTriangle,
   X,
   Check,
@@ -33,6 +35,8 @@ import {
   inviteUser,
   updateUser,
   deactivateUser,
+  reactivateUser,
+  deleteUserPermanent,
   resetUserPassword,
 } from '@/lib/api'
 
@@ -266,6 +270,40 @@ export function AdminUsers() {
     }
   }
 
+  // ─── Reactivate handler ─────────────────────────────────────────────────────
+
+  const handleReactivate = async (userId: string) => {
+    setFormLoading(true)
+    setFormError(null)
+    try {
+      await reactivateUser(userId)
+      await loadUsers()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Reactivate failed')
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
+  // ─── Delete permanent handler ───────────────────────────────────────────────
+
+  const [deleteTarget, setDeleteTarget] = useState<AdminUserItem | null>(null)
+
+  const handleDeletePermanent = async () => {
+    if (!deleteTarget) return
+    setFormLoading(true)
+    setFormError(null)
+    try {
+      await deleteUserPermanent(deleteTarget.id)
+      setDeleteTarget(null)
+      await loadUsers()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
   // ─── Reset Password handler ────────────────────────────────────────────────
 
   const handleResetPassword = async () => {
@@ -443,6 +481,27 @@ export function AdminUsers() {
                                 title="Deactivate user"
                               >
                                 <UserX className="h-4 w-4" />
+                              </button>
+                            )}
+                            {!isImmutable && !isCurrentUser && !u.active && (
+                              <button
+                                onClick={() => handleReactivate(u.id)}
+                                className="rounded-lg p-1.5 text-muted-foreground hover:bg-green-50 hover:text-green-600"
+                                title="Reactivate user"
+                              >
+                                <UserCheck className="h-4 w-4" />
+                              </button>
+                            )}
+                            {!isImmutable && !isCurrentUser && !u.active && currentRole === 'org_admin' && (
+                              <button
+                                onClick={() => {
+                                  setFormError(null)
+                                  setDeleteTarget(u)
+                                }}
+                                className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-700"
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             )}
                             {isImmutable && (
@@ -626,6 +685,41 @@ export function AdminUsers() {
               disabled={formLoading}
             >
               {formLoading ? 'Deactivating…' : 'Deactivate'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── Delete Permanent Dialog ──────────────────────────────────────────── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Permanently Delete User"
+      >
+        <div className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>
+          )}
+          <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+            <p className="text-sm font-medium text-red-800">⚠️ This action cannot be undone.</p>
+            <p className="mt-1 text-xs text-red-700">
+              This will permanently remove the user from both the database and authentication system.
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to permanently delete{' '}
+            <strong className="text-navy">{deleteTarget?.full_name || deleteTarget?.email}</strong>?
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-red-700 text-white hover:bg-red-800"
+              onClick={handleDeletePermanent}
+              disabled={formLoading}
+            >
+              {formLoading ? 'Deleting…' : 'Delete Permanently'}
             </Button>
           </div>
         </div>
