@@ -1,19 +1,25 @@
 """
-Bower Ag CowCare Tool — Conversation Pipeline
-Sprint 5: POST /conversation — the main chat endpoint.
+Bower Ag CowCare Tool - Conversation Pipeline
+Sprint 5+: POST /conversation - the main chat endpoint.
 
-CRITICAL PIPELINE ORDER (Steps 4.1 – 4.7):
-  4.1  classify_domain       — if UNKNOWN: return clarifying question
-  4.2  extract_entities      — product, location, container
-  4.3  Location lock         — get from session or entities; require for pricing
-  4.4  Governance (PRICING)  — exists -> sellable -> pricing -> governance_data
-  4.5  RAG (TROUBLESHOOTING/COW_HEALTH) — advisory search -> rag_context
-  4.6  call_claude           — ONLY HERE, after governance/RAG completes
-  4.7  Audit log             — non-blocking, always fires (even if Claude fails)
+CRITICAL PIPELINE ORDER (Steps 4.1 - 4.7):
+  4.1  classify_domain       - if UNKNOWN: return clarifying question
+  4.2  extract_entities      - product, location, container
+  4.3  Location lock         - get from session or entities; require for pricing
+  4.4  Governance            - ALWAYS runs when product/location context exists:
+                               - PRICING: full pipeline (exists -> sellable -> pricing)
+                               - TEAT_DIP / CHEMICAL_CIP: product governance
+                                 (exists -> sellable -> product details)
+                               - Any domain with location but no product:
+                                 product listing (all sellable products at location)
+  4.5  RAG (TROUBLESHOOTING/COW_HEALTH) - advisory search -> rag_context
+  4.6  call_claude           - ONLY HERE, after governance/RAG completes
+  4.7  Audit log             - non-blocking, always fires (even if Claude fails)
 
-⚠️  Claude is NEVER called before governance completes for PRICING domain.
-⚠️  Audit log writes even if Claude API fails.
-⚠️  Conversation history capped at system_config 'chat.max_history_length'.
+  Claude is NEVER called before governance completes for PRICING domain.
+  Product existence/sellability is checked for ALL product-related domains.
+  Audit log writes even if Claude API fails.
+  Conversation history capped at system_config 'chat.max_history_length'.
 """
 
 import asyncio
@@ -34,9 +40,9 @@ from app.services.entity_extractor import extract_entities
 
 router = APIRouter(tags=["Conversation"])
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Request / Response models
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 
 class ConversationMessage(BaseModel):
@@ -61,9 +67,9 @@ class ConversationResponse(BaseModel):
     output_tokens: Optional[int] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 def _get_max_history_length() -> int:
     """Read chat.max_history_length from system_config (default 20)."""
@@ -85,6 +91,20 @@ def _get_max_history_length() -> int:
     return 20
 
 
+def _resolve_location(location_code: str) -> Optional[dict]:
+    """Resolve a location branch_code to full location record."""
+    client = get_supabase_client()
+    loc_result = (
+        client.table("locations")
+        .select("id,name,branch_code")
+        .eq("branch_code", location_code.upper())
+        .execute()
+    )
+    if loc_result.data:
+        return loc_result.data[0]
+    return None
+
+
 def _run_governance_pipeline(
     product_name: str,
     location_code: str,
@@ -96,14 +116,17 @@ def _run_governance_pipeline(
       2. Product sellable at location?
       3. Get pricing
 
-    Returns governance_data dict or raises HTTPException on failure.
+    Returns governance_data dict.
     """
     client = get_supabase_client()
 
     # Step 1: Product exists?
     products = (
         client.table("products")
-        .select("id,product_name,part_number,category,product_type")
+        .select(
+            "id,product_name,part_number,category,product_type,"
+            "active_ingredient,chemistry_type,germicide_type,usage_timing"
+        )
         .ilike("product_name", f"%{product_name}%")
         .eq("active", True)
         .limit(10)
@@ -111,12 +134,26 @@ def _run_governance_pipeline(
     )
 
     if not products.data:
+        # Also try part_number match
+        products = (
+            client.table("products")
+            .select(
+                "id,product_name,part_number,category,product_type,"
+                "active_ingredient,chemistry_type,germicide_type,usage_timing"
+            )
+            .ilike("part_number", f"%{product_name}%")
+            .eq("active", True)
+            .limit(10)
+            .execute()
+        )
+
+    if not products.data:
         return {
             "exists": False,
             "product_name": product_name,
             "message": (
                 f"Product '{product_name}' is not in our current lineup. "
-                "Let's look at what we do carry that fits your needs."
+                "It does not exist in the Teat Dip Master or Chemical & CIP Master."
             ),
         }
 
@@ -124,21 +161,14 @@ def _run_governance_pipeline(
     product_id = product["id"]
 
     # Step 2: Resolve location
-    loc_result = (
-        client.table("locations")
-        .select("id,name,branch_code")
-        .eq("branch_code", location_code.upper())
-        .execute()
-    )
-
-    if not loc_result.data:
+    location = _resolve_location(location_code)
+    if not location:
         return {
             "exists": True,
             "product_name": product["product_name"],
             "error": f"Location '{location_code}' not found.",
         }
 
-    location = loc_result.data[0]
     location_id = location["id"]
 
     # Step 3: Product sellable at location?
@@ -159,6 +189,8 @@ def _run_governance_pipeline(
             "exists": True,
             "sellable": False,
             "product_name": product["product_name"],
+            "product_type": product.get("product_type"),
+            "category": product.get("category"),
             "location": location["name"],
             "location_code": location_code.upper(),
             "message": (
@@ -184,7 +216,6 @@ def _run_governance_pipeline(
         pricing_query = pricing_query.eq("container_size", container_size)
 
     pricing_result = pricing_query.execute()
-
     pricing_rows = pricing_result.data or []
 
     return {
@@ -192,6 +223,11 @@ def _run_governance_pipeline(
         "sellable": True,
         "product_name": product["product_name"],
         "part_number": product.get("part_number"),
+        "category": product.get("category"),
+        "product_type": product.get("product_type"),
+        "active_ingredient": product.get("active_ingredient"),
+        "chemistry_type": product.get("chemistry_type"),
+        "usage_timing": product.get("usage_timing"),
         "location": location["name"],
         "location_code": location_code.upper(),
         "pricing": [
@@ -206,6 +242,198 @@ def _run_governance_pipeline(
             for p in pricing_rows
         ],
         "pricing_count": len(pricing_rows),
+    }
+
+
+def _run_product_governance(
+    product_name: str,
+    location_code: Optional[str],
+) -> dict:
+    """
+    Run product existence and sellability governance for non-PRICING domains
+    (TEAT_DIP, CHEMICAL_CIP). Does NOT pull pricing.
+
+    This ensures Claude ALWAYS knows whether a product exists and whether
+    it's sellable at the rep's location - even for informational queries.
+
+    Returns governance_data dict with product details and sellability.
+    """
+    client = get_supabase_client()
+
+    # Step 1: Product exists? Search with broader matching
+    products = (
+        client.table("products")
+        .select(
+            "id,product_name,part_number,category,product_type,"
+            "active_ingredient,chemistry_type,germicide_type,"
+            "usage_timing,is_concentrate,emollient_pct,emollient_type,notes"
+        )
+        .ilike("product_name", f"%{product_name}%")
+        .eq("active", True)
+        .limit(10)
+        .execute()
+    )
+
+    if not products.data:
+        # Also try part_number match
+        products = (
+            client.table("products")
+            .select(
+                "id,product_name,part_number,category,product_type,"
+                "active_ingredient,chemistry_type,germicide_type,"
+                "usage_timing,is_concentrate,emollient_pct,emollient_type,notes"
+            )
+            .ilike("part_number", f"%{product_name}%")
+            .eq("active", True)
+            .limit(10)
+            .execute()
+        )
+
+    if not products.data:
+        return {
+            "exists": False,
+            "product_name": product_name,
+            "message": (
+                f"Product '{product_name}' is not in our current lineup. "
+                "It does not exist in the Teat Dip Master or Chemical & CIP Master."
+            ),
+        }
+
+    # Return all matching products with details
+    product_list = []
+    for product in products.data:
+        product_info = {
+            "product_name": product["product_name"],
+            "part_number": product.get("part_number"),
+            "category": product.get("category"),
+            "product_type": product.get("product_type"),
+            "active_ingredient": product.get("active_ingredient"),
+            "chemistry_type": product.get("chemistry_type"),
+            "germicide_type": product.get("germicide_type"),
+            "usage_timing": product.get("usage_timing"),
+            "is_concentrate": product.get("is_concentrate"),
+            "emollient_pct": product.get("emollient_pct"),
+            "emollient_type": product.get("emollient_type"),
+            "notes": product.get("notes"),
+        }
+
+        # Check sellability if we have a location
+        if location_code:
+            location = _resolve_location(location_code)
+            if location:
+                sell_result = (
+                    client.table("product_sellability")
+                    .select("sellable")
+                    .eq("product_id", product["id"])
+                    .eq("location_id", location["id"])
+                    .execute()
+                )
+                sellable = False
+                if sell_result.data:
+                    sellable = sell_result.data[0].get("sellable", False)
+                product_info["sellable_at_location"] = sellable
+                product_info["location"] = location["name"]
+                product_info["location_code"] = location_code.upper()
+
+        product_list.append(product_info)
+
+    return {
+        "exists": True,
+        "product_name": products.data[0]["product_name"],
+        "products_found": len(product_list),
+        "products": product_list,
+        "governance_note": (
+            "These products are verified from the Bower Ag product masters. "
+            "Present this data confidently - it is governance-verified."
+        ),
+    }
+
+
+def _run_product_listing(
+    location_code: str,
+    product_type_filter: Optional[str] = None,
+) -> dict:
+    """
+    List all sellable products at a given location. Optionally filter by
+    product_type (teat_dip, chemical, cip).
+
+    Used when users ask "what's available?" or "what teat dips do you have?"
+    without naming a specific product.
+    """
+    client = get_supabase_client()
+
+    # Resolve location
+    location = _resolve_location(location_code)
+    if not location:
+        return {
+            "error": f"Location '{location_code}' not found.",
+            "products": [],
+        }
+
+    location_id = location["id"]
+
+    # Get all sellable product IDs at this location
+    sell_result = (
+        client.table("product_sellability")
+        .select("product_id")
+        .eq("location_id", location_id)
+        .eq("sellable", True)
+        .execute()
+    )
+
+    if not sell_result.data:
+        return {
+            "location": location["name"],
+            "location_code": location_code.upper(),
+            "products": [],
+            "message": f"No products found as sellable at {location['name']}.",
+        }
+
+    sellable_ids = [row["product_id"] for row in sell_result.data]
+
+    # Get product details for all sellable products
+    products_query = (
+        client.table("products")
+        .select(
+            "id,product_name,part_number,category,product_type,"
+            "active_ingredient,chemistry_type,germicide_type,usage_timing"
+        )
+        .in_("id", sellable_ids)
+        .eq("active", True)
+        .order("product_name")
+    )
+
+    if product_type_filter:
+        products_query = products_query.eq("product_type", product_type_filter)
+
+    products_result = products_query.execute()
+
+    product_list = [
+        {
+            "product_name": p["product_name"],
+            "part_number": p.get("part_number"),
+            "category": p.get("category"),
+            "product_type": p.get("product_type"),
+            "active_ingredient": p.get("active_ingredient"),
+            "chemistry_type": p.get("chemistry_type"),
+            "germicide_type": p.get("germicide_type"),
+            "usage_timing": p.get("usage_timing"),
+        }
+        for p in (products_result.data or [])
+    ]
+
+    type_label = product_type_filter or "all"
+    return {
+        "location": location["name"],
+        "location_code": location_code.upper(),
+        "product_type_filter": product_type_filter,
+        "products": product_list,
+        "products_count": len(product_list),
+        "governance_note": (
+            f"These are ALL {type_label} products confirmed sellable at "
+            f"{location['name']}. This is governance-verified data from the "
+            f"product sellability matrix. Present with confidence."
+        ),
     }
 
 
@@ -234,13 +462,8 @@ def _run_rag_search(query: str, domain: str, limit: int = 4) -> Optional[str]:
         query_norm = np.linalg.norm(query_vec)
 
         client = get_supabase_client()
-        qb = client.table("document_chunks").select(
-            "section_title, content, source_doc, domain"
-        )
-        if rag_domain:
-            qb = qb.eq("domain", rag_domain)
 
-        # Need embeddings for similarity — fetch with embedding column
+        # Need embeddings for similarity - fetch with embedding column
         qb_with_emb = client.table("document_chunks").select(
             "section_title, content, source_doc, domain, embedding"
         )
@@ -288,9 +511,9 @@ def _run_rag_search(query: str, domain: str, limit: int = 4) -> Optional[str]:
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # POST /conversation
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
 @router.post("/conversation", response_model=ConversationResponse)
 async def conversation(
@@ -299,16 +522,16 @@ async def conversation(
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
 ):
     """
-    Main conversation endpoint — the heart of the CowCare Tool.
+    Main conversation endpoint - the heart of the CowCare Tool.
 
     Pipeline runs in EXACT order:
-      4.1 → classify_domain
-      4.2 → extract_entities
-      4.3 → Location lock
-      4.4 → Governance (PRICING only)
-      4.5 → RAG (TROUBLESHOOTING / COW_HEALTH only)
-      4.6 → call_claude (ONLY after governance/RAG)
-      4.7 → Audit log (non-blocking)
+      4.1 -> classify_domain
+      4.2 -> extract_entities
+      4.3 -> Location lock
+      4.4 -> Governance (ALL product-related domains)
+      4.5 -> RAG (TROUBLESHOOTING / COW_HEALTH only)
+      4.6 -> call_claude (ONLY after governance/RAG)
+      4.7 -> Audit log (non-blocking)
 
     Auth: Any role except customer.
     """
@@ -323,7 +546,7 @@ async def conversation(
     input_tokens = None
     output_tokens = None
 
-    # ── 4.1: Classify domain ──
+    # -- 4.1: Classify domain --
     domain = classify_domain(body.message)
 
     if domain == "UNKNOWN":
@@ -340,7 +563,7 @@ async def conversation(
         ))
         return ConversationResponse(
             reply=(
-                "To make sure I give you the right information — are you asking "
+                "To make sure I give you the right information - are you asking "
                 "about product pricing, a troubleshooting issue, or something "
                 "related to cow health? A little more detail will help me get "
                 "you the best answer."
@@ -350,13 +573,13 @@ async def conversation(
             llm_called=False,
         )
 
-    # ── 4.2: Extract entities ──
+    # -- 4.2: Extract entities --
     entities = extract_entities(body.message)
     product_name = entities.get("product_name")
     entity_location = entities.get("location_code")
     container_size = entities.get("container_size")
 
-    # ── 4.3: Location lock ──
+    # -- 4.3: Location lock --
     # Try session lock first, then entity extraction
     location_locked = location_lock_store.get_location(session_id)
 
@@ -365,7 +588,7 @@ async def conversation(
         location_lock_store.set_location(session_id, entity_location, user.id)
         location_locked = entity_location
 
-    # If PRICING domain and no location — ask for it
+    # If PRICING domain and no location - ask for it
     if domain == "PRICING" and not location_locked:
         duration_ms = int((time.time() - start) * 1000)
         asyncio.create_task(log_governance_action(
@@ -379,7 +602,7 @@ async def conversation(
         ))
         return ConversationResponse(
             reply=(
-                "I want to make sure I get you the right pricing — which "
+                "I want to make sure I get you the right pricing - which "
                 "location are we looking at? We've got Evans, Ulysses, "
                 "Jerome, Turlock, and Tulare."
             ),
@@ -389,7 +612,10 @@ async def conversation(
             llm_called=False,
         )
 
-    # ── 4.4: Governance pipeline (PRICING domain only) ──
+    # -- 4.4: Governance pipeline --
+    # PRICING domain: full pipeline (exists -> sellable -> pricing)
+    # TEAT_DIP / CHEMICAL_CIP: product governance (exists -> sellable -> details)
+    # Any domain with location + no product: product listing
     if domain == "PRICING":
         if product_name:
             governance_data = _run_governance_pipeline(
@@ -398,8 +624,15 @@ async def conversation(
                 container_size=container_size,
             )
             governance_applied = True
+        elif location_locked:
+            # No specific product in a pricing query but have location -
+            # list all sellable products so Claude can present options
+            governance_data = _run_product_listing(
+                location_code=location_locked,
+            )
+            governance_applied = True
         else:
-            # No product mentioned in a pricing query — ask
+            # No product AND no location - ask for location first
             duration_ms = int((time.time() - start) * 1000)
             asyncio.create_task(log_governance_action(
                 user_id=user.id,
@@ -415,7 +648,7 @@ async def conversation(
                 reply=(
                     "Sure, I can help with pricing! Which product are you "
                     "looking at? Give me the name and I'll pull the exact "
-                    f"numbers for {location_locked}."
+                    "numbers for your location."
                 ),
                 domain=domain,
                 location_locked=location_locked,
@@ -423,11 +656,32 @@ async def conversation(
                 llm_called=False,
             )
 
-    # ── 4.5: RAG search (TROUBLESHOOTING / COW_HEALTH only) ──
+    elif domain in ("TEAT_DIP", "CHEMICAL_CIP"):
+        # Product-specific domains: ALWAYS check product governance
+        if product_name:
+            # Check existence + sellability (no pricing)
+            governance_data = _run_product_governance(
+                product_name=product_name,
+                location_code=location_locked,
+            )
+            governance_applied = True
+        elif location_locked:
+            # No specific product but have location - list available products
+            # of the relevant type
+            type_filter = "teat_dip" if domain == "TEAT_DIP" else "chemical"
+            governance_data = _run_product_listing(
+                location_code=location_locked,
+                product_type_filter=type_filter,
+            )
+            governance_applied = True
+        # If no product and no location, Claude will handle with its
+        # domain knowledge and governance rules (ask for specifics)
+
+    # -- 4.5: RAG search (TROUBLESHOOTING / COW_HEALTH only) --
     if domain in ("TROUBLESHOOTING", "COW_HEALTH"):
         rag_context = _run_rag_search(body.message, domain, limit=4)
 
-    # ── 4.6: Call Claude ──
+    # -- 4.6: Call Claude --
     # Cap conversation history at system_config max_history_length
     max_history = _get_max_history_length()
     history = body.conversation_history[-max_history:]
@@ -473,11 +727,11 @@ async def conversation(
         else:
             reply = (
                 "I'm running into a technical issue right now. Give me a moment "
-                "and try that question again — I want to make sure I get you "
+                "and try that question again - I want to make sure I get you "
                 "the right answer."
             )
 
-    # ── 4.7: Audit log (non-blocking — always fires) ──
+    # -- 4.7: Audit log (non-blocking - always fires) --
     duration_ms = int((time.time() - start) * 1000)
     asyncio.create_task(log_governance_action(
         user_id=user.id,
