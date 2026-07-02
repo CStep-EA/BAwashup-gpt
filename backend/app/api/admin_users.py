@@ -284,6 +284,9 @@ async def invite_user(
         }
         if body.location_id:
             profile_row["location_id"] = body.location_id
+        # If admin set a temporary password, flag for forced change
+        if body.temporary_password:
+            profile_row["must_change_password"] = True
         client.table("profiles").insert(profile_row).execute()
     except Exception as e:
         # Profile creation failed — log but don't fail the invite
@@ -714,6 +717,14 @@ async def reset_user_password(
         except Exception as e:
             raise HTTPException(500, f"Failed to set password: {str(e)[:200]}")
 
+        # Flag user to force password change on next login
+        try:
+            client.table("profiles").update(
+                {"must_change_password": True}
+            ).eq("id", user_id).execute()
+        except Exception:
+            pass  # Non-critical — user can still log in
+
         fire_and_forget_audit(
             user_id=user.id,
             action="password_reset_manual",
@@ -728,7 +739,7 @@ async def reset_user_password(
 
         name = current_profile.get("full_name") or "User"
         return ResetPasswordResponse(
-            message=f"Password set for {name}. They can now log in with the new password.",
+            message=f"Password set for {name}. They will be required to change it on next login.",
             method="manual",
         )
     else:

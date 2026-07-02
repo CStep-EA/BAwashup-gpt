@@ -16,6 +16,7 @@ interface UserProfile {
   location_id: string | null
   customer_operation: string | null
   active: boolean
+  must_change_password?: boolean
 }
 
 interface AuthState {
@@ -64,7 +65,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // Fetch profile
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('id, full_name, role, location_id, customer_operation, active')
+          .select('id, full_name, role, location_id, customer_operation, active, must_change_password')
           .eq('id', data.user.id)
           .single()
 
@@ -74,6 +75,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             role: profileData.role,
             isLoading: false,
           })
+
+          // Force password change if admin-set temporary password
+          if (profileData.must_change_password) {
+            window.location.href = '/reset-password'
+            return
+          }
         } else {
           // Default to consultant if no profile
           set({
@@ -121,7 +128,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Fetch profile
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('id, full_name, role, location_id, customer_operation, active')
+        .select('id, full_name, role, location_id, customer_operation, active, must_change_password')
         .eq('id', session.user.id)
         .single()
 
@@ -131,6 +138,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           role: profileData.role,
           isLoading: false,
         })
+
+        // Force password change if flagged
+        if (profileData.must_change_password && window.location.pathname !== '/reset-password') {
+          window.location.href = '/reset-password'
+          return
+        }
       } else {
         set({ role: 'consultant', isLoading: false })
       }

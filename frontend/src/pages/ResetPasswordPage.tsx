@@ -83,6 +83,15 @@ export function ResetPasswordPage() {
       if (updateError) {
         setError(updateError.message)
       } else {
+        // Clear the must_change_password flag if it was set
+        const { data: { user: currentUser } } = await supabase.auth.getUser()
+        if (currentUser) {
+          await supabase
+            .from('profiles')
+            .update({ must_change_password: false })
+            .eq('id', currentUser.id)
+        }
+
         setSuccess(true)
         // Sign out so they can log in fresh with the new password
         await supabase.auth.signOut()
