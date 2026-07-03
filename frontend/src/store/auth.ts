@@ -78,7 +78,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
           // Force password change if admin-set temporary password
           if (profileData.must_change_password) {
-            window.location.href = '/reset-password'
+            window.location.href = '/reset-password?forced=true'
             return
           }
         } else {
@@ -141,7 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         // Force password change if flagged
         if (profileData.must_change_password && window.location.pathname !== '/reset-password') {
-          window.location.href = '/reset-password'
+          window.location.href = '/reset-password?forced=true'
           return
         }
       } else {
