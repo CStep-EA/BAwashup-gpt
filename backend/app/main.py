@@ -182,6 +182,7 @@ from app.api.admin_config import router as admin_config_router
 from app.api.admin_bugs import router as admin_bugs_router
 from app.api.admin_versions import router as admin_versions_router
 from app.api.admin_audit import router as admin_audit_router
+from app.api.admin_governance import router as admin_governance_router
 from app.api.customer_reports import router as customer_reports_router
 from app.api.media import router as media_router
 
@@ -226,6 +227,7 @@ app.include_router(admin_config_router)
 app.include_router(admin_bugs_router)
 app.include_router(admin_versions_router)
 app.include_router(admin_audit_router)
+app.include_router(admin_governance_router)
 app.include_router(customer_reports_router)
 app.include_router(media_router)
 

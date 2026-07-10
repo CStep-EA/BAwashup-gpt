@@ -19,6 +19,7 @@ import {
   LogOut,
   ScrollText,
   MessageSquarePlus,
+  FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
@@ -38,6 +39,7 @@ const ADMIN_NAV = [
   { to: '/admin/config', label: 'Configuration', icon: Wrench },
   { to: '/admin/bugs', label: 'Bug Reports', icon: Bug },
   { to: '/admin/versions', label: 'Versions', icon: GitBranch },
+  { to: '/admin/governance', label: 'Governance', icon: FlaskConical },
   { to: '/admin/audit', label: 'Audit Log', icon: ScrollText, orgAdminOnly: true },
 ]
 
