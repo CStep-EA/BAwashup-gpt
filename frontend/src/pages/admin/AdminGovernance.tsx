@@ -26,7 +26,7 @@ import {
   Shield, Activity, FlaskConical, FileText, Loader2,
   AlertTriangle, CheckCircle2, XCircle, Clock, Upload,
   Trash2, RefreshCw, Eye, ChevronDown, ChevronRight,
-  Play, Search, FileUp, BarChart3,
+  Play, Search, FileUp,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════════════════════
