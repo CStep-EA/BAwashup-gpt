@@ -36,6 +36,25 @@ interface AuthState {
   clearError: () => void
 }
 
+/**
+ * Detect if the current URL contains a Supabase recovery token.
+ * Supabase embeds tokens in the hash fragment: #access_token=xxx&type=recovery
+ * OR in query params after PKCE flow: ?type=recovery&code=xxx
+ */
+function isRecoveryUrl(): boolean {
+  const hash = window.location.hash
+  const search = window.location.search
+  // Hash-based: #access_token=xxx&type=recovery
+  if (hash && hash.includes('type=recovery')) {
+    return true
+  }
+  // Query-based (PKCE): ?type=recovery or ?type=recovery&code=xxx
+  if (search && search.includes('type=recovery')) {
+    return true
+  }
+  return false
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   profile: null,
@@ -111,8 +130,56 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initialize: async () => {
     set({ isLoading: true })
+
+    // ─── EARLY DETECTION: Recovery token in URL ───────────────────────
+    // If the URL contains a recovery token (from email reset link),
+    // we must redirect to /reset-password BEFORE processing the session.
+    // This handles the case where Supabase redirects to "/" instead of "/reset-password"
+    // (e.g., if redirect_to isn't whitelisted in Supabase Dashboard).
+    const currentPath = window.location.pathname
+    const onResetPage = currentPath === '/reset-password'
+
+    if (isRecoveryUrl() && !onResetPage) {
+      // Preserve the hash/search params so ResetPasswordPage can process the token
+      window.location.href = '/reset-password' + window.location.hash
+      return
+    }
+
+    // If we're on the reset page with a recovery URL, don't process as normal auth
+    if (isRecoveryUrl() && onResetPage) {
+      set({ isLoading: false })
+      return
+    }
+
+    // ─── Register auth state change listener FIRST ────────────────────
+    // This must be before getSession() so we don't miss the PASSWORD_RECOVERY event
+    // that Supabase fires when processing the hash fragment.
+    let recoveryDetected = false
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        recoveryDetected = true
+        // Redirect to reset password page if not already there
+        if (window.location.pathname !== '/reset-password') {
+          window.location.href = '/reset-password'
+        }
+        return
+      }
+
+      if (!session && event === 'SIGNED_OUT') {
+        get().logout()
+      }
+    })
+
     try {
       const { data: { session } } = await supabase.auth.getSession()
+
+      // If PASSWORD_RECOVERY was detected during getSession(), bail out
+      // (the redirect is already happening)
+      if (recoveryDetected) {
+        set({ isLoading: false })
+        return
+      }
 
       if (!session?.user) {
         set({ isLoading: false })
@@ -140,7 +207,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         })
 
         // Force password change if flagged
-        if (profileData.must_change_password && window.location.pathname !== '/reset-password') {
+        if (profileData.must_change_password && currentPath !== '/reset-password') {
           window.location.href = '/reset-password?forced=true'
           return
         }
@@ -151,18 +218,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: false })
     }
 
-    // Listen for auth state changes (session refresh, logout from other tab)
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (!session) {
-        get().logout()
-      }
-      // If Supabase fires PASSWORD_RECOVERY (user clicked reset link),
-      // redirect to /reset-password regardless of current page.
-      // This handles the case where Supabase redirects to "/" instead of "/reset-password".
-      if (event === 'PASSWORD_RECOVERY') {
-        window.location.href = '/reset-password'
-      }
-    })
+    // Clean up subscription on page unload (though in practice
+    // this store lives for the app lifetime)
+    void subscription
   },
 
   setLocationCode: (code) => set({ locationCode: code }),

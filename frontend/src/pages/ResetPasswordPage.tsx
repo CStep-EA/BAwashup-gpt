@@ -48,28 +48,40 @@ export function ResetPasswordPage() {
     }
 
     // Scenarios 1 & 2: Email link recovery or invite link
-    // Supabase handles the token exchange from the URL hash automatically
-    // via detectSessionInUrl: true in the client config.
+    // The URL may contain a hash fragment with the recovery token.
+    // Supabase client (detectSessionInUrl: true) will process it automatically.
+    
+    let resolved = false
+
+    // Listen for auth events FIRST — PASSWORD_RECOVERY fires when Supabase
+    // processes the recovery token from the URL hash
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, _session) => {
+        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
+          if (!resolved) {
+            resolved = true
+            setSessionReady(true)
+            setChecking(false)
+          }
+        }
+      }
+    )
+
+    // Also check if there's already a valid session (e.g., after redirect from auth store)
     const checkSession = async () => {
-      // Give Supabase a moment to process the URL hash/params
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Give Supabase time to process the hash fragment token exchange
+      // This is needed because detectSessionInUrl processes asynchronously
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      if (resolved) return // Already handled by event listener
 
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
+        resolved = true
         setSessionReady(true)
       }
       setChecking(false)
     }
-
-    // Listen for auth events (SIGNED_IN from magic link / recovery)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, _session) => {
-        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-          setSessionReady(true)
-          setChecking(false)
-        }
-      }
-    )
 
     checkSession()
 
@@ -152,7 +164,7 @@ export function ResetPasswordPage() {
           <div className="flex flex-col items-center py-8 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
             <p className="mt-3 text-sm text-muted-foreground">
-              {isForced ? 'Preparing…' : 'Verifying your link…'}
+              {isForced ? 'Preparing…' : 'Verifying your reset link…'}
             </p>
           </div>
         )}
@@ -171,7 +183,7 @@ export function ResetPasswordPage() {
             <p className="text-sm text-muted-foreground">
               {isForced
                 ? 'Your session has expired. Please log in again and you will be prompted to set a new password.'
-                : 'This password reset link has expired or is no longer valid. Please request a new one from your administrator or use the login page.'}
+                : 'This password reset link has expired or is no longer valid. Please request a new one from your administrator or use "Forgot Password" on the login page.'}
             </p>
             <Button
               onClick={() => navigate('/login', { replace: true })}
