@@ -1,17 +1,19 @@
 /**
  * ResetPasswordPage — Handles password reset flow
  * 
- * Two scenarios:
+ * Three scenarios:
  * 1. User clicked a reset link from email → has access_token in URL hash
- *    → Shows "Set New Password" form
+ *    → Supabase fires PASSWORD_RECOVERY event → Shows password form
  * 2. User navigated here from invite link → session established by Supabase
- *    → Shows "Set Your Password" form
+ *    → SIGNED_IN event fires → Shows password form
+ * 3. Admin set a temporary password → user logged in → auth store redirected
+ *    here with ?forced=true → user already has session → Shows password form immediately
  * 
  * After setting password, redirects to login.
  */
 
 import { useState, useEffect, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -19,6 +21,9 @@ import { Loader2, AlertCircle, CheckCircle2, Lock } from 'lucide-react'
 
 export function ResetPasswordPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const isForced = searchParams.get('forced') === 'true'
+
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -28,12 +33,26 @@ export function ResetPasswordPage() {
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
+    // Scenario 3: Admin forced password change — user is already logged in
+    // Just verify the session exists and show the form immediately
+    if (isForced) {
+      const verifyForcedSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          setSessionReady(true)
+        }
+        setChecking(false)
+      }
+      verifyForcedSession()
+      return
+    }
+
+    // Scenarios 1 & 2: Email link recovery or invite link
     // Supabase handles the token exchange from the URL hash automatically
     // via detectSessionInUrl: true in the client config.
-    // We just need to wait for the auth state to update.
     const checkSession = async () => {
       // Give Supabase a moment to process the URL hash/params
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 1500))
 
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
@@ -57,7 +76,7 @@ export function ResetPasswordPage() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [isForced])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -104,6 +123,14 @@ export function ResetPasswordPage() {
     }
   }
 
+  // Determine headline text based on scenario
+  const headline = isForced
+    ? 'Create Your New Password'
+    : 'Set Your Password'
+  const subtext = isForced
+    ? 'Your administrator has required you to set a new password before continuing.'
+    : 'Create a secure password for your account'
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
@@ -114,9 +141,9 @@ export function ResetPasswordPage() {
             alt="Bower Ag"
             className="mx-auto mb-4 h-14 w-auto"
           />
-          <h1 className="text-2xl font-bold text-charcoal">Set Your Password</h1>
+          <h1 className="text-2xl font-bold text-charcoal">{headline}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create a secure password for your account
+            {subtext}
           </p>
         </div>
 
@@ -125,7 +152,7 @@ export function ResetPasswordPage() {
           <div className="flex flex-col items-center py-8 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
             <p className="mt-3 text-sm text-muted-foreground">
-              Verifying your link…
+              {isForced ? 'Preparing…' : 'Verifying your link…'}
             </p>
           </div>
         )}
@@ -138,10 +165,13 @@ export function ResetPasswordPage() {
                 <AlertCircle className="h-6 w-6 text-red-600" />
               </div>
             </div>
-            <p className="font-medium text-navy">Link expired or invalid</p>
+            <p className="font-medium text-navy">
+              {isForced ? 'Session expired' : 'Link expired or invalid'}
+            </p>
             <p className="text-sm text-muted-foreground">
-              This password reset link has expired or is no longer valid.
-              Please request a new one from your administrator or use the login page.
+              {isForced
+                ? 'Your session has expired. Please log in again and you will be prompted to set a new password.'
+                : 'This password reset link has expired or is no longer valid. Please request a new one from your administrator or use the login page.'}
             </p>
             <Button
               onClick={() => navigate('/login', { replace: true })}
