@@ -935,3 +935,239 @@ export async function checkFeatureEnabled(key: string): Promise<boolean> {
     return false
   }
 }
+
+
+// ─── Admin Governance Module ────────────────────────────────────────────────
+
+export interface GovernanceAuditBypass {
+  id: string
+  query_text: string
+  domain: string
+  created_at: string
+  user_id?: string
+  governance_result?: Record<string, unknown>
+  response_summary?: string
+}
+
+export interface GovernanceAuditResult {
+  total_queries: number
+  bypasses_found: number
+  bypass_rate: number
+  bypasses: GovernanceAuditBypass[]
+  domains_checked: string[]
+  time_window_days: number
+}
+
+export interface DomainPerformance {
+  domain: string
+  avg_ms: number
+  max_ms: number
+  min_ms: number
+  p95_ms: number
+  count: number
+  over_5s_count: number
+  over_5s_rate: number
+}
+
+export interface PerformanceResult {
+  domains: DomainPerformance[]
+  overall_avg_ms: number
+  overall_p95_ms: number
+  total_queries: number
+  time_window_days: number
+  alert_domains: string[]
+}
+
+export interface PerformanceTrend {
+  date: string
+  domain: string
+  avg_ms: number
+  count: number
+}
+
+export interface TestCaseResult {
+  test_id: string
+  test_name: string
+  status: 'passed' | 'failed' | 'skipped' | 'error'
+  duration_ms: number
+  message?: string
+  details?: string
+}
+
+export interface TestRunResult {
+  run_id: string
+  started_at: string
+  completed_at?: string
+  status: 'running' | 'completed' | 'failed'
+  total: number
+  passed: number
+  failed: number
+  skipped: number
+  errors: number
+  test_cases: TestCaseResult[]
+  duration_ms?: number
+}
+
+export interface GovernanceDocument {
+  source_doc: string
+  domain: string
+  chunk_count: number
+  total_chars: number
+  created_at?: string
+}
+
+export interface DocumentChunk {
+  id: string
+  section_title: string
+  domain: string
+  content: string
+  source_doc: string
+  created_at?: string
+}
+
+export interface DocumentStats {
+  total_documents: number
+  total_chunks: number
+  total_chars: number
+  by_domain: Record<string, number>
+  last_updated?: string
+}
+
+export interface ProcessingStatus {
+  job_id: string
+  status: 'uploaded' | 'processing' | 'completed' | 'failed'
+  filename: string
+  domain?: string
+  chunks_created: number
+  message?: string
+}
+
+export const governanceApi = {
+  // ── Audit ──
+  async runAudit(days = 7, domain?: string): Promise<GovernanceAuditResult> {
+    const params = new URLSearchParams({ days: String(days) })
+    if (domain) params.set('domain', domain)
+    return apiFetch<GovernanceAuditResult>(`/admin/governance/audit?${params}`)
+  },
+
+  async getAuditDetails(auditId: string) {
+    return apiFetch<Record<string, unknown>>(`/admin/governance/audit/details?audit_id=${auditId}`)
+  },
+
+  // ── Performance ──
+  async getPerformance(days = 7): Promise<PerformanceResult> {
+    return apiFetch<PerformanceResult>(`/admin/governance/performance?days=${days}`)
+  },
+
+  async getPerformanceTrends(days = 14): Promise<{ trends: PerformanceTrend[] }> {
+    return apiFetch<{ trends: PerformanceTrend[] }>(`/admin/governance/performance/trends?days=${days}`)
+  },
+
+  // ── Test Suite ──
+  async runTests(filter?: string): Promise<TestRunResult> {
+    const params = filter ? `?test_filter=${encodeURIComponent(filter)}` : ''
+    return apiFetch<TestRunResult>(`/admin/governance/tests/run${params}`, { method: 'POST' })
+  },
+
+  async getTestRun(runId: string): Promise<TestRunResult> {
+    return apiFetch<TestRunResult>(`/admin/governance/tests/${runId}`)
+  },
+
+  async getTestHistory(limit = 20): Promise<{ runs: TestRunResult[] }> {
+    return apiFetch<{ runs: TestRunResult[] }>(`/admin/governance/tests/history?limit=${limit}`)
+  },
+
+  // ── Documents ──
+  async listDocuments(domain?: string): Promise<{ documents: GovernanceDocument[]; total_documents: number; domains: string[] }> {
+    const params = domain ? `?domain=${domain}` : ''
+    return apiFetch(`/admin/governance/documents${params}`)
+  },
+
+  async getDocumentStats(): Promise<DocumentStats> {
+    return apiFetch<DocumentStats>('/admin/governance/documents/stats')
+  },
+
+  async getDocumentChunks(sourceDoc: string, limit = 50): Promise<{ chunks: DocumentChunk[]; count: number }> {
+    return apiFetch(`/admin/governance/documents/chunks/${encodeURIComponent(sourceDoc)}?limit=${limit}`)
+  },
+
+  async uploadDocument(file: File, domain: string): Promise<{ job_id: string; filename: string; size_kb: number }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('domain', domain)
+
+    const token = (await supabase.auth.getSession()).data.session?.access_token
+    const res = await fetch(`${API_URL}/admin/governance/documents/upload`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+    return res.json()
+  },
+
+  async processDocument(jobId: string, domain?: string): Promise<{ job_id: string; status: string }> {
+    const formData = new FormData()
+    formData.append('job_id', jobId)
+    if (domain) formData.append('domain', domain)
+
+    const token = (await supabase.auth.getSession()).data.session?.access_token
+    const res = await fetch(`${API_URL}/admin/governance/documents/process`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+    return res.json()
+  },
+
+  async getProcessingStatus(jobId: string): Promise<ProcessingStatus> {
+    return apiFetch<ProcessingStatus>(`/admin/governance/documents/process/${jobId}`)
+  },
+
+  async deleteDocument(sourceDoc: string): Promise<{ deleted: boolean; chunks_removed: number }> {
+    return apiFetch(`/admin/governance/documents/${encodeURIComponent(sourceDoc)}`, { method: 'DELETE' })
+  },
+
+  async reembedDocument(sourceDoc: string): Promise<{ job_id: string; chunk_count: number }> {
+    const formData = new FormData()
+    formData.append('source_doc', sourceDoc)
+
+    const token = (await supabase.auth.getSession()).data.session?.access_token
+    const res = await fetch(`${API_URL}/admin/governance/documents/reembed`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+    return res.json()
+  },
+
+  async updateChunk(chunkId: string, updates: { content?: string; section_title?: string; domain?: string }) {
+    const formData = new FormData()
+    if (updates.content) formData.append('content', updates.content)
+    if (updates.section_title) formData.append('section_title', updates.section_title)
+    if (updates.domain) formData.append('domain', updates.domain)
+
+    const token = (await supabase.auth.getSession()).data.session?.access_token
+    const res = await fetch(`${API_URL}/admin/governance/documents/chunks/${chunkId}`, {
+      method: 'PUT',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err)
+    }
+    return res.json()
+  },
+}

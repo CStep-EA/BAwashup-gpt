@@ -75,6 +75,7 @@ import { AdminConfig } from '@/pages/admin/AdminConfig'
 import { AdminBugs } from '@/pages/admin/AdminBugs'
 import { AdminVersions } from '@/pages/admin/AdminVersions'
 import { AuditLogPage } from '@/pages/admin/AuditLogPage'
+import { AdminGovernance } from '@/pages/admin/AdminGovernance'
 
 function App() {
   return (
@@ -120,6 +121,7 @@ function App() {
             <Route path="admin/bugs" element={<AdminBugs />} />
             <Route path="admin/versions" element={<AdminVersions />} />
             <Route path="admin/audit" element={<AuditLogPage />} />
+            <Route path="admin/governance" element={<AdminGovernance />} />
           </Route>
         </Route>
       </Route>
